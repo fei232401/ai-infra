@@ -1,0 +1,36 @@
+# System
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Benchmark outputs
+03-scheduler-benchmark/report.html
+03-scheduler-benchmark/results_*
+
+# Secrets
+*.key
+*.pem
+secrets/

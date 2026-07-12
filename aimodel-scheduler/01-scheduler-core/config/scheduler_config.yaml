@@ -1,0 +1,140 @@
+# AI Model Scheduler Configuration
+# ====================================
+# Defines all inference backends, routing strategies, and operational parameters.
+
+# --- Scheduler Settings ---
+scheduler:
+  port: 9000
+  health_check_interval: 10          # seconds between health probe cycles
+  health_check_timeout: 5            # seconds per backend health check
+  backend_unhealthy_threshold: 3     # consecutive failures to mark unhealthy
+  backend_recovery_threshold: 2      # consecutive successes to mark healthy again
+  score_window_size: 20              # number of recent requests for score calculation
+  circuit_breaker:
+    failure_threshold: 3             # consecutive failures → OPEN
+    timeout: 30                      # seconds in OPEN before → HALF_OPEN
+    half_open_max_requests: 2        # requests allowed in HALF_OPEN
+  session_ttl: 1800                  # session affinity TTL in seconds (30 min)
+
+# --- Routing Policies ---
+routing:
+  default_strategy: model_aware      # model_aware | latency | throughput | cost
+  strategies:
+    model_aware:
+      description: "Route to backends that serve the requested model"
+      enabled: true
+    latency:
+      description: "Prefer backends with lowest historical TTFT"
+      enabled: true
+    throughput:
+      description: "Prefer backends with highest historical throughput"
+      enabled: true
+    cost:
+      description: "Prefer backends with lowest cost_per_token"
+      enabled: true
+    affinity:
+      description: "Sticky session: same session → same backend"
+      enabled: true
+
+# --- Backend Pool ---
+# Each backend represents an Ollama or vLLM inference endpoint.
+# The scheduler auto-discovers these and performs health checks.
+backends:
+  - id: "ollama-local-a"
+    name: "Ollama Local A (RTX 4060)"
+    url: "http://127.0.0.1:11434"
+    api_path: "/api/generate"
+    chat_path: "/api/chat"
+    health_path: "/api/tags"
+    models:
+      - "qwen2.5:0.5b"
+    engine: "ollama"
+    cost_per_token: 0.0             # local = free
+    max_concurrency: 8
+    weight: 1.0
+    tags:
+      - "local"
+      - "low-cost"
+      - "development"
+
+  - id: "ollama-local-b"
+    name: "Ollama Local B (RTX 4060)"
+    url: "http://127.0.0.1:11435"
+    api_path: "/api/generate"
+    chat_path: "/api/chat"
+    health_path: "/api/tags"
+    models:
+      - "qwen2.5:1.5b"
+    engine: "ollama"
+    cost_per_token: 0.0             # local = free
+    max_concurrency: 4
+    weight: 1.0
+    tags:
+      - "local"
+      - "low-cost"
+      - "large-model"
+
+  - id: "mock-vllm"
+    name: "Mock vLLM (Simulated Cloud RTX 4090)"
+    url: "http://127.0.0.1:11436"
+    api_path: "/api/generate"
+    chat_path: "/api/chat"
+    health_path: "/health"
+    models:
+      - "qwen2.5:0.5b"
+      - "qwen2.5:1.5b"
+    engine: "vllm"
+    cost_per_token: 0.000002        # simulated cloud cost ($0.002 / 1K tokens)
+    max_concurrency: 32
+    weight: 2.0                     # higher weight = preferred under equal conditions
+    tags:
+      - "cloud"
+      - "high-throughput"
+      - "low-latency"
+      - "production"
+
+  - id: "vllm-4090"
+    name: "vLLM RTX 4090 24GB (Qwen2.5-7B)"
+    url: "http://127.0.0.1:8000"
+    api_path: "/v1/completions"                 # OpenAI-compatible
+    chat_path: "/v1/chat/completions"            # OpenAI-compatible chat
+    health_path: "/health"                       # vLLM health endpoint
+    models:
+      - "qwen2.5:7b"
+      - "/root/autodl-tmp/huggingface/models--Qwen--Qwen2.5-7B-Instruct"
+    engine: "vllm"
+    cost_per_token: 0.000003        # cloud GPU cost ($0.003 / 1K tokens)
+    max_concurrency: 64             # vLLM continuous batching → much higher than Ollama
+    weight: 3.0                     # highest weight — real production GPU
+    tags:
+      - "production"
+      - "high-throughput"
+      - "low-latency"
+      - "large-model"
+      - "real-gpu"
+
+# --- Rate Limiting ---
+rate_limit:
+  global:
+    enabled: true
+    capacity: 20                    # global token bucket capacity
+    refill_rate: 10                 # tokens per second
+  per_backend:
+    enabled: true
+    default_capacity: 20
+    default_refill_rate: 10
+
+# --- Auth ---
+auth:
+  enabled: true
+  jwt_secret: "ai-model-scheduler-jwt-secret-key-change-in-production"
+  jwt_algorithm: "HS256"
+  jwt_expiry_minutes: 60
+  api_keys:
+    - "test-key"
+    - "demo-key"
+
+# --- Logging ---
+logging:
+  level: "INFO"                     # DEBUG | INFO | WARNING | ERROR
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"

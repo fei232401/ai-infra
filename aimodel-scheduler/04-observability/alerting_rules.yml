@@ -1,0 +1,144 @@
+# AI Model Scheduler — Prometheus Alerting Rules
+# ================================================
+# These rules can be consumed by Prometheus + AlertManager
+# or used as a reference for any alerting system.
+#
+# Metrics are exposed at: GET /v1/metrics
+
+groups:
+  - name: scheduler_alerts
+    rules:
+
+      # --- Backend Health Alerts ---
+
+      - alert: BackendUnhealthy
+        expr: backend_healthy_count < backend_count_total
+        for: 30s
+        labels:
+          severity: warning
+          component: scheduler
+        annotations:
+          summary: "One or more inference backends are unhealthy"
+          description: "{{ $value }} of {{ $labels.backend_count_total }} backends are unhealthy. Check /v1/backends for details."
+
+      - alert: AllBackendsDown
+        expr: backend_healthy_count == 0
+        for: 10s
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: "ALL inference backends are unhealthy"
+          description: "No backends available for inference. Immediate action required."
+
+      # --- Circuit Breaker Alerts ---
+
+      - alert: CircuitBreakerOpen
+        expr: backend_circuit_open > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: scheduler
+        annotations:
+          summary: "Circuit breaker open on one or more backends"
+          description: "Backend(s) have been isolated due to excessive failures. Check backend logs."
+
+      # --- Latency Alerts ---
+
+      - alert: HighTTFT
+        expr: backend_ttft_ms > 3000
+        for: 2m
+        labels:
+          severity: warning
+          component: scheduler
+        annotations:
+          summary: "High Time-To-First-Token detected"
+          description: "Backend {{ $labels.backend_id }} TTFT is {{ $value }}ms (threshold: 3000ms)."
+
+      - alert: ExtremeTTFT
+        expr: backend_ttft_ms > 10000
+        for: 1m
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: "Extremely high TTFT — backend may be overloaded"
+          description: "Backend {{ $labels.backend_id }} TTFT is {{ $value }}ms. Investigate immediately."
+
+      # --- Error Rate Alerts ---
+
+      - alert: HighErrorRate
+        expr: backend_error_rate > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          component: scheduler
+        annotations:
+          summary: "High error rate on backend"
+          description: "Backend {{ $labels.backend_id }} error rate is {{ $value | humanizePercentage }}."
+
+      - alert: CriticalErrorRate
+        expr: backend_error_rate > 0.5
+        for: 1m
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: "Critical error rate — backend failing"
+          description: "Backend {{ $labels.backend_id }} has {{ $value | humanizePercentage }} error rate. Circuit breaker may engage."
+
+      # --- Concurrency Alerts ---
+
+      - alert: BackendNearCapacity
+        expr: backend_active_requests / backend_max_concurrency > 0.8
+        for: 3m
+        labels:
+          severity: warning
+          component: scheduler
+        annotations:
+          summary: "Backend nearing concurrency capacity"
+          description: "Backend {{ $labels.backend_id }} at {{ $value | humanizePercentage }} capacity ({{ $labels.active }}/{{ $labels.max }})."
+
+      - alert: BackendAtCapacity
+        expr: backend_active_requests / backend_max_concurrency >= 1.0
+        for: 1m
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: "Backend at full concurrency capacity"
+          description: "Backend {{ $labels.backend_id }} is saturated. Requests will be queued or rejected."
+
+      # --- Scheduler Health ---
+
+      - alert: SchedulerDown
+        expr: up{job="ai-model-scheduler"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: scheduler
+        annotations:
+          summary: "AI Model Scheduler is down"
+          description: "The scheduler process is not responding. All inference routing has stopped."
+
+      - alert: SchedulerHighFailureRate
+        expr: scheduler_failed_requests / scheduler_total_requests > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          component: scheduler
+        annotations:
+          summary: "High request failure rate through scheduler"
+          description: "Scheduler has {{ $value | humanizePercentage }} failure rate."
+
+      # --- Rate Limiting ---
+
+      - alert: RateLimitHitting
+        expr: rate_limit_available_tokens < 2
+        for: 1m
+        labels:
+          severity: info
+          component: scheduler
+        annotations:
+          summary: "Rate limit bucket running low"
+          description: "Backend {{ $labels.backend_id }} has only {{ $value }} tokens available."

@@ -1,0 +1,21 @@
+# AI Model Scheduler — Python Dependencies
+# Install: pip install -r requirements.txt
+
+# API Framework
+fastapi>=0.100.0
+uvicorn>=0.22.0
+
+# Async HTTP
+aiohttp>=3.8.0
+
+# Configuration
+pyyaml>=6.0
+
+# Authentication
+pyjwt>=2.8.0
+
+# Dashboard (optional — for 04-observability/dashboard.py)
+matplotlib>=3.7.0
+
+# Benchmark (for 03-scheduler-benchmark/)
+# No extra deps — uses stdlib asyncio + aiohttp
