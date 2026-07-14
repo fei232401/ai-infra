@@ -101,7 +101,7 @@ spec:
       serviceAccountName: sealed-secrets
       containers:
         - name: sealed-secrets
-          image: docker.io/bitnami/sealed-secrets-controller:v0.26.3
+          image: docker.1ms.run/bitnami/sealed-secrets-controller:v0.26.3
           command:
             - controller
           args:

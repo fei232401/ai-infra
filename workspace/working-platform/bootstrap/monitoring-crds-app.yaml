@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-crds
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: sre-lab
+    sre-lab.component: monitoring
+spec:
+  project: default
+  source:
+    repoURL: 'git@github.com:fei232401/ai-infra.git'
+    targetRevision: main
+    path: workspace/working-platform/crds
+  destination:
+    server: 'https://kubernetes.default.svc'
+  syncPolicy:
+    automated:
+      prune: false       # CRD 不自动删除，防止误删
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
