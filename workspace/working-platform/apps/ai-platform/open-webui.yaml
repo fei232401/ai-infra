@@ -33,7 +33,7 @@ spec:
     spec:
       containers:
         - name: open-webui
-          image: docker.1ms.run/openwebui/openwebui:main
+          image: ghcr.io/open-webui/open-webui:main
           ports:
             - containerPort: 8080
               name: http
