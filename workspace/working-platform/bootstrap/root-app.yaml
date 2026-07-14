@@ -6,9 +6,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: 'https://github.com/fei232401/sre-lab.git'
+    repoURL: 'https://github.com/fei232401/ai-infra.git'
     targetRevision: main
-    path: 02-gitops-production/bootstrap
+    path: workspace/working-platform/bootstrap
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: argocd
