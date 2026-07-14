@@ -1,0 +1,87 @@
+---
+# =============================================================
+# 全局集群告警规则
+# 补充 kube-prometheus-stack 默认规则之外的自定义告警
+# =============================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sre-lab-cluster-alerts
+  namespace: monitoring
+  labels:
+    release: prometheus-stack
+    app.kubernetes.io/name: sre-lab-alerts
+    app.kubernetes.io/part-of: monitoring
+spec:
+  groups:
+  - name: sre-lab.node
+    interval: 30s
+    rules:
+    # === 🔴 Critical: 节点内存使用率 > 90% ===
+    - alert: NodeHighMemoryUsage
+      expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
+      for: 5m
+      labels:
+        severity: critical
+        team: infra
+      annotations:
+        summary: "🔴 节点内存使用率过高"
+        description: "节点 {{ $labels.instance }} 内存使用率已超过 90%，持续 5 分钟！当前集群内存 7GB，水位已达 {{ $value | printf \"%.1f\" }}%。"
+
+    # === 🟡 Warning: 节点 CPU 使用率 > 80% ===
+    - alert: NodeHighCPUUsage
+      expr: (1 - avg by(instance)(irate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100 > 80
+      for: 10m
+      labels:
+        severity: warning
+        team: infra
+      annotations:
+        summary: "🟡 节点 CPU 使用率过高"
+        description: "节点 {{ $labels.instance }} CPU 使用率已超过 80%，持续 10 分钟！"
+
+    # === 🟡 Warning: 节点磁盘使用率 > 85% ===
+    - alert: NodeDiskUsageHigh
+      expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 > 85
+      for: 10m
+      labels:
+        severity: warning
+        team: infra
+      annotations:
+        summary: "🟡 节点磁盘使用率过高"
+        description: "节点 {{ $labels.instance }} 分区 {{ $labels.mountpoint }} 磁盘使用率已超过 85%！"
+
+  - name: sre-lab.k8s
+    interval: 30s
+    rules:
+    # === 🟡 Warning: PVC 接近容量上限 ===
+    - alert: PVCNearFull
+      expr: kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.85
+      for: 10m
+      labels:
+        severity: warning
+        team: infra
+      annotations:
+        summary: "🟡 PVC {{ $labels.persistentvolumeclaim }} 使用率过高"
+        description: "PVC {{ $labels.persistentvolumeclaim }} (ns: {{ $labels.namespace }}) 使用率已超过 85%！"
+
+    # === 🔴 Critical: 任何 namespace 的 Pod CrashLoop ===
+    - alert: PodCrashLooping
+      expr: increase(kube_pod_container_status_restarts_total[1h]) > 5
+      for: 5m
+      labels:
+        severity: critical
+        team: infra
+      annotations:
+        summary: "🔴 Pod {{ $labels.pod }} CrashLooping"
+        description: "Pod {{ $labels.pod }} (ns: {{ $labels.namespace }}) 在 1 小时内重启超过 5 次！"
+
+    # === 🟡 Warning: ArgoCD App 不同步 ===
+    - alert: ArgoCDAppOutOfSync
+      expr: argocd_app_info{sync_status="OutOfSync"} == 1
+      for: 15m
+      labels:
+        severity: warning
+        team: infra
+      annotations:
+        summary: "🟡 ArgoCD 应用 {{ $labels.name }} 不同步"
+        description: "ArgoCD 应用 {{ $labels.name }} 已持续 15 分钟处于 OutOfSync 状态！"

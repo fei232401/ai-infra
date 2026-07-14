@@ -1,0 +1,30 @@
+---
+# 🌟 SRE 导师批注：
+# 这是一个典型的“架构剪裁”补丁。K3s 默认不运行独立的 kube-proxy Pod，
+# 因此 kube-prometheus-stack 默认的 KubeProxyDown 告警会永远误报。
+# 我们不去修改庞大的 Helm values，而是通过注入一条优先级更高的 PrometheusRule，
+# 在 PromQL 层面将 kube-proxy 相关的指标过滤掉，实现优雅的“软性屏蔽”。
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: k3s-alert-overrides
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+    app.kubernetes.io/part-of: kube-prometheus-stack
+spec:
+  groups:
+    - name: k3s.kube-proxy.rules
+      rules:
+        # 覆盖默认的 KubeProxyDown 告警，加上 namespace 过滤条件使其永远为 false
+        - alert: KubeProxyDown
+          # 原表达式通常是: absent(up{job="kube-proxy"} == 1)
+          # 我们加上一个不存在的 namespace 条件，让这条规则永远不触发 (降维打击)
+          expr: absent(up{job="kube-proxy", namespace="k3s-does-not-have-kube-proxy"} == 1)
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            description: "This alert is disabled for K3s clusters."
+            summary: "KubeProxy is down (Disabled for K3s)."

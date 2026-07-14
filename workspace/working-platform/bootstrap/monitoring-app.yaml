@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-app
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: sre-lab
+    sre-lab.component: monitoring
+spec:
+  project: default
+  source:
+    repoURL: 'https://github.com/fei232401/sre-lab.git'
+    targetRevision: main
+    path: 02-gitops-production/monitoring
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true

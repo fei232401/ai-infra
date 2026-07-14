@@ -1,0 +1,129 @@
+---
+# =============================================================
+# 修复版: Ollama ServiceMonitor
+# 修复项:
+# 1. port 从 "http" 改为 "metrics"（匹配 ollama-exporter 的 Service 端口名）
+# 2. path 改为 /metrics（Exporter 暴露的路径）
+# 3. 同时监控 Exporter 指标和 Ollama 本身的健康端点
+# =============================================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ollama-exporter-monitor
+  namespace: ai-platform
+  labels:
+    release: prometheus-stack
+    app.kubernetes.io/name: ollama-exporter
+    app.kubernetes.io/part-of: ai-platform
+spec:
+  namespaceSelector:
+    matchNames:
+    - ai-platform
+  selector:
+    matchLabels:
+      app: ollama-exporter
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 15s
+---
+# =============================================================
+# 增强版: Ollama PrometheusRule 告警规则
+# 在原有基础上增加:
+# 1. Exporter 自身存活告警
+# 2. API 响应时间 SLO 告警
+# 3. 采集错误率告警
+# =============================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ollama-slo-rules
+  namespace: ai-platform
+  labels:
+    release: prometheus-stack
+    app.kubernetes.io/part-of: ai-platform
+spec:
+  groups:
+  - name: ollama.availability
+    interval: 30s
+    rules:
+    # === 🔴 Critical: Ollama Pod 未就绪 ===
+    - alert: OllamaPodDown
+      expr: kube_pod_status_ready{namespace="ai-platform", pod=~"ollama-.*", condition="true"} == 0
+      for: 2m
+      labels:
+        severity: critical
+        team: ai-infra
+      annotations:
+        summary: "🔴 Ollama 推理服务宕机"
+        description: "Ollama Pod 已持续 2 分钟未就绪，AI 平台无法提供大模型推理服务！请立即检查！"
+
+    # === 🟡 Warning: Ollama 内存使用率过高 ===
+    - alert: OllamaHighMemoryUsage
+      expr: container_memory_working_set_bytes{namespace="ai-platform", container="ollama"} / container_spec_memory_limit_bytes{namespace="ai-platform", container="ollama"} > 0.85
+      for: 5m
+      labels:
+        severity: warning
+        team: ai-infra
+      annotations:
+        summary: "🟡 Ollama 内存使用率过高"
+        description: "Ollama 容器内存使用率已超过限制值的 85%，持续 5 分钟。可能导致 OOMKilled。"
+
+    # === 🔴 Critical: Ollama Exporter 检测到服务不可用 ===
+    - alert: OllamaServiceDown
+      expr: ollama_up == 0
+      for: 3m
+      labels:
+        severity: critical
+        team: ai-infra
+      annotations:
+        summary: "🔴 Ollama API 不可用 (Exporter 检测)"
+        description: "ollama-exporter 连续 3 分钟检测到 Ollama API 不可达 (ollama_up=0)，请检查 Ollama 服务状态！"
+
+    # === 🟡 Warning: Ollama API 响应过慢 ===
+    - alert: OllamaSlowResponse
+      expr: ollama_api_response_time_seconds > 5
+      for: 5m
+      labels:
+        severity: warning
+        team: ai-infra
+      annotations:
+        summary: "🟡 Ollama API 响应过慢"
+        description: "Ollama API 响应时间已超过 5 秒，持续 5 分钟。可能是模型加载过大或系统资源不足。"
+
+    # === 🟡 Warning: Exporter 采集错误过多 ===
+    - alert: OllamaExporterScrapeErrors
+      expr: increase(ollama_scrape_errors_total[10m]) > 5
+      for: 5m
+      labels:
+        severity: warning
+        team: ai-infra
+      annotations:
+        summary: "🟡 Ollama Exporter 采集频繁失败"
+        description: "10 分钟内 Ollama Exporter 采集失败超过 5 次，请检查 Ollama 服务连通性。"
+
+  - name: ai-platform.general
+    interval: 30s
+    rules:
+    # === 🔴 Critical: AI 平台 Pod 重启过多 ===
+    - alert: AIPlatformPodCrashLooping
+      expr: increase(kube_pod_container_status_restarts_total{namespace="ai-platform"}[1h]) > 3
+      for: 5m
+      labels:
+        severity: critical
+        team: ai-infra
+      annotations:
+        summary: "🔴 AI 平台 Pod CrashLooping"
+        description: "Pod {{ $labels.pod }} 在 1 小时内重启超过 3 次，请检查日志！"
+
+    # === 🟡 Warning: AI 平台 PVC 使用率过高 ===
+    - alert: AIPlatformPVCUsageHigh
+      expr: kubelet_volume_stats_used_bytes{namespace="ai-platform"} / kubelet_volume_stats_capacity_bytes{namespace="ai-platform"} > 0.85
+      for: 10m
+      labels:
+        severity: warning
+        team: ai-infra
+      annotations:
+        summary: "🟡 AI 平台 PVC 存储使用率过高"
+        description: "PVC {{ $labels.persistentvolumeclaim }} 使用率已超过 85%，剩余空间不足！"

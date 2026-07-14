@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: k3s-controlplane-blackhole
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  route:
+    receiver: 'blackhole'
+    matchers:
+      - name: alertname
+        value: KubeProxyDown|KubeSchedulerDown|KubeControllerManagerDown
+        matchType: =~
+    continue: false
+  receivers:
+    - name: 'blackhole'

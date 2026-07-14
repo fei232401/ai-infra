@@ -1,0 +1,37 @@
+---
+# ============================================================
+# PodDisruptionBudget for Ollama StatefulSet
+# 保证 StatefulSet 滚动更新/驱逐时至少 1 个 Pod 可用
+# ============================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ollama-pdb
+  namespace: ai-platform
+  labels:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/component: high-availability
+    app.kubernetes.io/part-of: ai-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+---
+# ============================================================
+# PodDisruptionBudget for Open-WebUI Deployment
+# ============================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: open-webui-pdb
+  namespace: ai-platform
+  labels:
+    app.kubernetes.io/name: open-webui
+    app.kubernetes.io/component: high-availability
+    app.kubernetes.io/part-of: ai-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: open-webui

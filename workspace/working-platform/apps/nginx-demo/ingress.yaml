@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-nginx-ingress
+  namespace: nginx-demo
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: nginx-demo-strip-nginx-prefix@kubernetescrd
+  labels:
+    app.kubernetes.io/part-of: nginx-demo
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /nginx
+            pathType: Prefix
+            backend:
+              service:
+                name: my-nginx-svc
+                port:
+                  number: 80

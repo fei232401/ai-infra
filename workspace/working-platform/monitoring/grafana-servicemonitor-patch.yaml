@@ -1,0 +1,25 @@
+# 覆盖 Helm 生成的 Grafana ServiceMonitor，强制指定正确的 metrics 路径
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: prometheus-stack-grafana
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/instance: prometheus-stack
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: grafana
+    release: prometheus-stack
+spec:
+  endpoints:
+  - honorLabels: true
+    path: /grafana/metrics   # 关键修复：适配 Grafana 的 sub-path
+    port: http-web
+    scheme: http
+  jobLabel: prometheus-stack
+  namespaceSelector:
+    matchNames:
+    - monitoring
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: prometheus-stack
+      app.kubernetes.io/name: grafana

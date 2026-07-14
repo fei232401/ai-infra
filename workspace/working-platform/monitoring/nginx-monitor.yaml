@@ -1,0 +1,72 @@
+---
+# =============================================================
+# Nginx Demo ServiceMonitor
+# 监控 nginx-demo namespace 中的 Nginx 服务
+# 注意: nginx 默认不暴露 Prometheus metrics
+# 这里使用 blackbox 方式，通过 HTTP GET / 检测存活
+# 后续可升级为 nginx-prometheus-exporter
+# =============================================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nginx-demo-monitor
+  namespace: nginx-demo
+  labels:
+    release: prometheus-stack
+    app.kubernetes.io/name: nginx-demo
+    app.kubernetes.io/part-of: nginx-demo
+spec:
+  namespaceSelector:
+    matchNames:
+    - nginx-demo
+  selector:
+    matchLabels:
+      app: my-nginx
+  endpoints:
+  - port: http
+    path: /
+    interval: 30s
+    scrapeTimeout: 10s
+    metricRelabelings:
+    # Nginx 返回的是 HTML 不是 metrics，这里主要用来检测 target 发现
+    # 实际可用性通过 kube-state-metrics 的 Pod 状态来监控
+    - sourceLabels: [__name__]
+      regex: ".*"
+      action: drop
+---
+# =============================================================
+# Nginx Demo PrometheusRule
+# 基于 kube-state-metrics 监控 Nginx Pod 状态
+# =============================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nginx-demo-rules
+  namespace: nginx-demo
+  labels:
+    release: prometheus-stack
+    app.kubernetes.io/name: nginx-demo
+spec:
+  groups:
+  - name: nginx-demo.availability
+    interval: 30s
+    rules:
+    - alert: NginxPodDown
+      expr: kube_pod_status_ready{namespace="nginx-demo", condition="true"} == 0
+      for: 2m
+      labels:
+        severity: warning
+        team: web-infra
+      annotations:
+        summary: "🟡 Nginx Demo Pod 未就绪"
+        description: "Nginx Pod {{ $labels.pod }} 已持续 2 分钟未就绪！"
+
+    - alert: NginxReplicasMismatch
+      expr: kube_deployment_status_replicas_available{namespace="nginx-demo"} < kube_deployment_spec_replicas{namespace="nginx-demo"}
+      for: 5m
+      labels:
+        severity: warning
+        team: web-infra
+      annotations:
+        summary: "🟡 Nginx 副本数不足"
+        description: "Nginx Deployment 期望 {{ $labels.replicas }} 个副本，但实际可用不足！"

@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: open-webui-service
+  namespace: ai-platform
+  labels:
+    app: open-webui
+spec:
+  type: ClusterIP
+  selector:
+    app: open-webui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open-webui
+  namespace: ai-platform
+  labels:
+    app: open-webui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open-webui
+  template:
+    metadata:
+      labels:
+        app: open-webui
+    spec:
+      containers:
+        - name: open-webui
+          image: ghcr.io/open-webui/open-webui:main
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: OLLAMA_BASE_URL
+              value: "http://ollama-service:11434"
+            - name: WEBUI_AUTH
+              value: "false"
+            - name: RAG_EMBEDDING_ENGINE
+              value: "ollama"
+            - name: RAG_EMBEDDING_MODEL
+              value: "nomic-embed-text"
+            - name: RAG_OLLAMA_BASE_URL
+              value: "http://ollama-service:11434"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          volumeMounts:
+            - name: webui-data
+              mountPath: /app/backend/data
+      volumes:
+        - name: webui-data
+          persistentVolumeClaim:
+            claimName: open-webui-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: open-webui-pvc
+  namespace: ai-platform
+  labels:
+    app: open-webui
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi

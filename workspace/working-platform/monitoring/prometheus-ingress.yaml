@@ -1,0 +1,52 @@
+---
+# =============================================================
+# Prometheus Web UI Ingress
+# 路径: /prometheus
+# =============================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sre-lab-prometheus-ingress
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: monitoring
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+  - http:
+      paths:
+      - backend:
+          service:
+            name: prometheus-stack-kube-prom-prometheus
+            port:
+              number: 9090
+        path: /prometheus
+        pathType: Prefix
+---
+# =============================================================
+# Alertmanager Web UI Ingress
+# 路径: /alertmanager
+# =============================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sre-lab-alertmanager-ingress
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: alertmanager
+    app.kubernetes.io/part-of: monitoring
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+  - http:
+      paths:
+      - backend:
+          service:
+            name: prometheus-stack-kube-prom-alertmanager
+            port:
+              number: 9093
+        path: /alertmanager
+        pathType: Prefix
