@@ -101,7 +101,7 @@ spec:
       serviceAccountName: sealed-secrets
       containers:
         - name: sealed-secrets
-          image: quay.io/bitnami/sealed-secrets-controller:v0.26.3
+          image: lank8s.cn/bitnami/sealed-secrets-controller:v0.26.3
           command:
             - controller
           args:
