@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-platform-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: monitoring
+data:
+  ai-platform-overview.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "title": "Ollama 服务状态",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "targets": [{ "expr": "ollama_up", "legendFormat": "Ollama UP" }],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "options": { "0": { "text": "DOWN 🔴", "color": "red" }, "1": { "text": "UP ✅", "color": "green" } }, "type": "value" }
+              ],
+              "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+            }
+          }
+        },
+        {
+          "title": "已加载模型数",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 4, "x": 6, "y": 0 },
+          "targets": [{ "expr": "ollama_models_loaded", "legendFormat": "Models" }],
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } }
+        },
+        {
+          "title": "API 响应时间",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 5, "x": 10, "y": 0 },
+          "targets": [{ "expr": "ollama_api_response_time_seconds", "legendFormat": "Latency" }],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 2 }, { "color": "red", "value": 5 }] }
+            }
+          }
+        },
+        {
+          "title": "采集错误总数",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 5, "x": 15, "y": 0 },
+          "targets": [{ "expr": "ollama_scrape_errors_total", "legendFormat": "Errors" }],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 10 }] }
+            }
+          }
+        },
+        {
+          "title": "Ollama API 响应时间趋势",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "targets": [
+            { "expr": "ollama_api_response_time_seconds", "legendFormat": "API Latency" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 2, "fillOpacity": 15 } } }
+        },
+        {
+          "title": "Ollama 模型详情",
+          "type": "table",
+          "gridPos": { "h": 8, "w": 8, "x": 12, "y": 4 },
+          "targets": [
+            { "expr": "ollama_model_info", "legendFormat": "", "format": "table", "instant": true }
+          ],
+          "transformations": [
+            { "id": "filterByRefId", "options": { "include": { "refId": "A" } } },
+            { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": false }, "renameByName": { "model": "模型名称", "digest": "摘要", "Value": "大小(bytes)" } } }
+          ]
+        },
+        {
+          "title": "AI Platform CPU 使用率",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "targets": [
+            { "expr": "sum(rate(container_cpu_usage_seconds_total{namespace='ai-platform', container!='POD', container!=''}[5m])) by (pod)", "legendFormat": "{{ pod }}" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "percentunit", "custom": { "lineWidth": 2, "fillOpacity": 10 } } }
+        },
+        {
+          "title": "AI Platform 内存使用",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "targets": [
+            { "expr": "sum(container_memory_working_set_bytes{namespace='ai-platform', container!='POD', container!=''}) by (pod)", "legendFormat": "{{ pod }}" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "lineWidth": 2, "fillOpacity": 10 } } }
+        },
+        {
+          "title": "AI Platform Pod 状态",
+          "type": "table",
+          "gridPos": { "h": 6, "w": 24, "x": 0, "y": 20 },
+          "targets": [
+            { "expr": "kube_pod_info{namespace='ai-platform'}", "legendFormat": "", "format": "table", "instant": true },
+            { "expr": "kube_pod_status_phase{namespace='ai-platform'}", "legendFormat": "", "format": "table", "instant": true, "refId": "B" }
+          ],
+          "transformations": [
+            { "id": "seriesToColumns", "options": { "byField": "pod" } }
+          ]
+        },
+        {
+          "title": "Ollama 采集错误率",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 26 },
+          "targets": [
+            { "expr": "rate(ollama_scrape_errors_total[5m])", "legendFormat": "Error Rate" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "ops", "custom": { "lineWidth": 2, "fillOpacity": 20 } } }
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": ["ai-platform", "ollama", "sre-lab"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "title": "AI Platform Overview",
+      "uid": "ai-platform-overview",
+      "version": 1
+    }
