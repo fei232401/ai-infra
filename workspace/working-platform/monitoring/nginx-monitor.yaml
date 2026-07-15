@@ -12,7 +12,7 @@ metadata:
   name: nginx-demo-monitor
   namespace: nginx-demo
   labels:
-    release: prometheus-stack
+    release: monitoring-stack
     app.kubernetes.io/name: nginx-demo
     app.kubernetes.io/part-of: nginx-demo
     app.kubernetes.io/name: nginx-demo
@@ -46,7 +46,7 @@ metadata:
   name: nginx-demo-rules
   namespace: nginx-demo
   labels:
-    release: prometheus-stack
+    release: monitoring-stack
     app.kubernetes.io/name: nginx-demo
 spec:
   groups:

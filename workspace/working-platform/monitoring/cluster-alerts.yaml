@@ -9,7 +9,7 @@ metadata:
   name: sre-lab-cluster-alerts
   namespace: monitoring
   labels:
-    release: prometheus-stack
+    release: monitoring-stack
     app.kubernetes.io/name: sre-lab-alerts
     app.kubernetes.io/part-of: monitoring
 spec:
