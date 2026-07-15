@@ -19,7 +19,7 @@ spec:
   automountServiceAccountToken: true
   image: "quay.io/prometheus/prometheus:v2.54.1"
   version: v2.54.1
-  externalUrl: http://monitoring-stack-kube-prom-prometheus.monitoring:9090
+  externalUrl: http://localhost/prometheus
   paused: false
   replicas: 1
   shards: 1
@@ -37,7 +37,7 @@ spec:
   tsdb:
     outOfOrderTimeWindow: 0s
   walCompression: true
-  routePrefix: "/"
+  routePrefix: /prometheus
   serviceAccountName: monitoring-stack-kube-prom-prometheus
   serviceMonitorSelector:
     matchLabels:
