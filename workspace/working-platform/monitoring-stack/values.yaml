@@ -1,0 +1,121 @@
+# ============================================================
+# kube-prometheus-stack 精简配置
+# 目标：7GB 节点可运行，只保留核心组件
+# ============================================================
+
+# 关闭不需要的大组件
+alertmanager:
+  enabled: false  # 你的告警走 wechat-adapter，不需要 Alertmanager UI
+
+# Prometheus 裁剪
+prometheus:
+  prometheusSpec:
+    # 资源限制（给 7GB 节点留空间）
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+    # 保留时间
+    retention: 2d
+    # 减少存储
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          storageClassName: local-path
+          resources:
+            requests:
+              storage: 2Gi
+
+# Grafana 裁剪
+grafana:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  # 你的 ingress 已经配了 /grafana
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s/grafana"
+      serve_from_sub_path: true
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 1Gi
+
+# node-exporter 裁剪
+nodeExporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      memory: 32Mi
+
+# kube-state-metrics 裁剪
+kubeStateMetrics:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
+# Prometheus Operator 资源限制
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+# 不安装默认的告警规则（你的 Git 里有自己的）
+defaultRules:
+  create: true
+  rules:
+    alertmanager: false
+    etcd: false
+    configReloaders: false
+    general: false
+    k8s: false
+    kubeApiserverAvailability: false
+    kubeApiserverBurnrate: false
+    kubeApiserverHistogram: false
+    kubeApiserverSlos: false
+    kubeControllerManager: false
+    kubelet: false
+    kubeProxy: false
+    kubePrometheusGeneral: false
+    kubePrometheusNodeRecording: false
+    kubernetesApps: false
+    kubernetesResources: false
+    kubernetesStorage: false
+    kubernetesSystem: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeStateMetrics: false
+    network: false
+    node: false
+    nodeExporterAlerting: false
+    nodeExporterRecording: false
+    prometheus: false
+    prometheusOperator: false
+
+# k3s 不需要 kube-proxy 相关
+kubeProxy:
+  enabled: false
+
+# k3s 不需要独立 kubelet ServiceMonitor
+kubelet:
+  enabled: true
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
