@@ -8,16 +8,12 @@ metadata:
     sre-lab.component: monitoring
 spec:
   project: default
-  sources:
-    - repoURL: https://prometheus-community.github.io/helm-charts
-      chart: kube-prometheus-stack
-      targetRevision: 59.1.0
-      helm:
-        valueFiles:
-          - $values/workspace/working-platform/monitoring-stack/values.yaml
-    - repoURL: git@github.com:fei232401/ai-infra.git
-      targetRevision: main
-      ref: values
+  source:
+    repoURL: git@github.com:fei232401/ai-infra.git
+    targetRevision: main
+    path: workspace/working-platform/monitoring-stack/manifests/kube-prometheus-stack
+    directory:
+      recurse: true
   destination:
     server: 'https://kubernetes.default.svc'
     namespace: monitoring
