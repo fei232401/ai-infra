@@ -1,5 +1,31 @@
 ---
-# Grafana
+# Traefik Middleware: Strip Prefix for Grafana
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-prefix-grafana
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: gateway
+spec:
+  stripPrefix:
+    prefixes:
+      - /grafana
+---
+# Traefik Middleware: Strip Prefix for Prometheus
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-prefix-prometheus
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: gateway
+spec:
+  stripPrefix:
+    prefixes:
+      - /prometheus
+---
+# Grafana Ingress
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -9,6 +35,7 @@ metadata:
     app.kubernetes.io/part-of: gateway
   annotations:
     kubernetes.io/ingress.class: traefik
+    traefik.ingress.kubernetes.io/router.middlewares: monitoring-strip-prefix-grafana@kubernetescrd
 spec:
   rules:
   - http:
@@ -21,7 +48,7 @@ spec:
             port:
               number: 80
 ---
-# Prometheus
+# Prometheus Ingress
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -31,6 +58,7 @@ metadata:
     app.kubernetes.io/part-of: gateway
   annotations:
     kubernetes.io/ingress.class: traefik
+    traefik.ingress.kubernetes.io/router.middlewares: monitoring-strip-prefix-prometheus@kubernetescrd
 spec:
   rules:
   - http:
@@ -43,7 +71,7 @@ spec:
             port:
               number: 9090
 ---
-# Open-WebUI
+# Open-WebUI Ingress
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
