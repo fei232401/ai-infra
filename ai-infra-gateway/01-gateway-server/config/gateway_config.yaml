@@ -1,0 +1,49 @@
+# AI Infra 推理网关配置文件
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+ollama:
+  base_url: "http://localhost:11434"
+  default_model: "qwen2.5:1.5b"
+  timeout: 120  # 生成超时(秒)
+
+auth:
+  enabled: true
+  # JWT 鉴权配置 (v2 镀金升级)
+  # 生产环境迁移: 从硬编码 API Key → JWT Token + 过期刷新
+  jwt_secret: "ai-infra-gateway-jwt-secret-key-2026"  # JWT 签名密钥
+  jwt_algorithm: "HS256"                                # 签名算法
+  jwt_expire_minutes: 60                                # Token 过期时间
+  api_keys:                                             # 兼容旧版 API Key (逐步废弃)
+    - "sk-infra-gateway-dev-key-2026"
+
+rate_limit:
+  enabled: true
+  capacity: 10
+  refill_rate: 5
+
+# 熔断器配置 (v2 镀金升级)
+circuit_breaker:
+  enabled: true
+  failure_threshold: 3      # 连续失败 3 次 → 熔断
+  timeout_seconds: 30       # 熔断后 30 秒尝试恢复
+  half_open_requests: 1     # 半开状态允许 1 个试探请求
+
+# 重试配置 (v2 镀金升级)  
+retry:
+  enabled: true
+  max_attempts: 2           # 最多重试 2 次
+  backoff_seconds: 1        # 重试间隔 1 秒
+
+# --------------------
+# 庖丁解牛
+# --------------------
+# 想象一个水桶：
+#   - 桶底有个小孔，每秒漏出 5 滴水（refill_rate）
+#   - 桶最多装 10 滴水（capacity）
+#   - 每次请求来就要从桶里取一滴
+#   - 如果桶里没水了 → 返回 HTTP 429（熔断）
+#   - 如果请求频率<5QPS，桶永远是满的
+#   - 如果突发流量来（比如瞬间10个并发），桶里的水够应付第一波
+#   但如果持续>5QPS，桶会被掏空 → 触发限流

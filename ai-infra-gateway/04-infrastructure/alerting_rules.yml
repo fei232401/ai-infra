@@ -1,0 +1,65 @@
+# ============================================================
+# Prometheus 告警规则 — AI Infra Gateway
+# GPU 温度 / Ollama 服务 / 熔断器状态 / 限流触发
+# ============================================================
+groups:
+  - name: ai_infra_alerts
+    rules:
+      # ---------- GPU 温度 ----------
+      - alert: GPU_Temperature_High
+        expr: ai_infra_gpu_temperature_c > 80
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU 温度超过 80°C"
+          description: "RTX 4060 温度已达到 {{ $value }}°C，接近降频阈值"
+
+      - alert: GPU_Temperature_Critical
+        expr: ai_infra_gpu_temperature_c > 87
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU 温度临界 — 即将降频"
+          description: "RTX 4060 温度 {{ $value }}°C，已触发硬件保护降频"
+
+      # ---------- GPU 显存 ----------
+      - alert: GPU_Memory_High
+        expr: (ai_infra_gpu_memory_used_mb / ai_infra_gpu_memory_total_mb) > 0.90
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU 显存占用超过 90%"
+          description: "显存已用 {{ $value | humanizePercentage }}，接近 OOM 风险"
+
+      # ---------- Ollama 服务 ----------
+      - alert: Ollama_Service_Down
+        expr: ai_infra_ollama_service_up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Ollama 推理引擎不可达"
+          description: "Ollama (localhost:11434) 已停止响应，所有推理请求将失败"
+
+      # ---------- 限流触发 ----------
+      - alert: Rate_Limit_Triggered
+        expr: rate(http_requests_total{status="429"}[5m]) > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "限流频繁触发"
+          description: "过去 5 分钟内 HTTP 429 响应速率超过 5/s，建议调整令牌桶参数"
+
+      # ---------- 熔断器 ----------
+      - alert: Circuit_Breaker_Open
+        expr: ai_infra_circuit_breaker_state == 0  # 0=OPEN
+        for: 10s
+        labels:
+          severity: critical
+        annotations:
+          summary: "熔断器跳闸 — Ollama 后端连续失败"
+          description: "熔断器已进入 OPEN 状态，所有请求被快速拒绝。Ollama 后端可能已崩溃"

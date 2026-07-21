@@ -1,0 +1,75 @@
+{
+  "model": "qwen2.5-0.5b",
+  "path": "/root/models/qwen2.5-0.5b-Instruct",
+  "time": "Sun Jun 21 06:17:02 2026",
+  "scenarios": {
+    "short": [
+      {
+        "conc": 1,
+        "ok": "8/8",
+        "ttft_avg": 31.6,
+        "ttft_p95": 155.9,
+        "tpot_avg": 1.9,
+        "tps": 5132.4
+      },
+      {
+        "conc": 4,
+        "ok": "8/8",
+        "ttft_avg": 33.2,
+        "ttft_p95": 45.0,
+        "tpot_avg": 2.2,
+        "tps": 17778.3
+      },
+      {
+        "conc": 8,
+        "ok": "8/8",
+        "ttft_avg": 53.5,
+        "ttft_p95": 54.8,
+        "tpot_avg": 2.2,
+        "tps": 14602.8
+      },
+      {
+        "conc": 16,
+        "ok": "8/8",
+        "ttft_avg": 50.4,
+        "ttft_p95": 52.1,
+        "tpot_avg": 2.2,
+        "tps": 15350.5
+      }
+    ],
+    "long": [
+      {
+        "conc": 1,
+        "ok": "8/8",
+        "ttft_avg": 16.2,
+        "ttft_p95": 28.3,
+        "tpot_avg": 1.9,
+        "tps": 84898.3
+      },
+      {
+        "conc": 4,
+        "ok": "8/8",
+        "ttft_avg": 31.0,
+        "ttft_p95": 41.8,
+        "tpot_avg": 2.1,
+        "tps": 57399.6
+      },
+      {
+        "conc": 8,
+        "ok": "8/8",
+        "ttft_avg": 50.3,
+        "ttft_p95": 51.4,
+        "tpot_avg": 2.2,
+        "tps": 46701.6
+      },
+      {
+        "conc": 16,
+        "ok": "8/8",
+        "ttft_avg": 50.3,
+        "ttft_p95": 51.8,
+        "tpot_avg": 2.2,
+        "tps": 46287.9
+      }
+    ]
+  }
+}

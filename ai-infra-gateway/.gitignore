@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Monitoring artifacts
+monitoring/grafana.zip
+monitoring/grafana/
+monitoring/prometheus/
+monitoring/prometheus.zip
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini
+*.lnk
+
+# Logs & temp
+*.log
+service_status.txt
+out_models.txt
+diag*.txt
+gateway_log.txt
+gateway_out.txt
+pull_log.txt
+progress_report.txt
+troubleshoot_result.txt
+env_diag_result.txt
+
+# Ollama models (large binary files)
+C:\Users\admin\.ollama/
+
+# GGUF files (downloaded separately)
+*.gguf
