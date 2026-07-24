@@ -18,8 +18,9 @@ import yaml
 import aiohttp
 import jwt as pyjwt
 from datetime import datetime, timedelta, timezone
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, Request, HTTPException, status, Response
 from fastapi.responses import StreamingResponse, JSONResponse
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.middleware.cors import CORSMiddleware
 
 # ------------------------------------------------------------------
@@ -76,6 +77,35 @@ def load_config(path: str = None) -> dict:
         return yaml.safe_load(f)
 
 config = load_config()
+
+# ------------------------------------------------------------------
+# ============ Prometheus 指标定义 ============
+# ------------------------------------------------------------------
+REQUEST_COUNT = Counter(
+    'gateway_requests_total',
+    'Total requests processed',
+    ['method', 'path', 'status_code']
+)
+REQUEST_LATENCY = Histogram(
+    'gateway_request_duration_seconds',
+    'Request latency in seconds',
+    ['method', 'path'],
+    buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0]
+)
+IN_PROGRESS = Gauge(
+    'gateway_requests_in_progress',
+    'Requests currently being processed',
+    ['method', 'path']
+)
+CIRCUIT_STATE = Gauge(
+    'gateway_circuit_breaker_state',
+    'Circuit breaker state: 0=closed, 1=open, 2=half_open'
+)
+OLLAMA_REQUESTS = Counter(
+    'gateway_ollama_requests_total',
+    'Requests forwarded to Ollama backend',
+    ['endpoint', 'status_code']
+)
 
 # ------------------------------------------------------------------
 # ============ 模块1：令牌桶限流器 ============
@@ -183,7 +213,7 @@ circuit_breaker = CircuitBreaker(
 #   Payload 含: {"sub": "user", "exp": 1782000000, "iat": 1781996400}
 async def auth_middleware(request: Request, call_next):
     # 跳过健康检查和文档路径
-    if request.url.path in ("/health", "/docs", "/openapi.json", "/redoc", "/api/auth/token"):
+    if request.url.path in ("/health", "/docs", "/openapi.json", "/redoc", "/api/auth/token", "/metrics"):
         response = await call_next(request)
         return response
 
@@ -197,6 +227,7 @@ async def auth_middleware(request: Request, call_next):
         token = request.headers.get("X-API-Key", "")
 
     if not token:
+        REQUEST_COUNT.labels(method=request.method, path=request.url.path, status_code="401").inc()
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
 
     # 优先尝试 JWT 验证
@@ -211,6 +242,7 @@ async def auth_middleware(request: Request, call_next):
         response = await call_next(request)
         return response
     except pyjwt.ExpiredSignatureError:
+        REQUEST_COUNT.labels(method=request.method, path=request.url.path, status_code="401").inc()
         return JSONResponse(status_code=401, content={"error": "Token expired"})
     except pyjwt.InvalidTokenError:
         pass  # JWT 验证失败 → 回退到 API Key
@@ -222,6 +254,7 @@ async def auth_middleware(request: Request, call_next):
         response = await call_next(request)
         return response
 
+    REQUEST_COUNT.labels(method=request.method, path=request.url.path, status_code="401").inc()
     return JSONResponse(status_code=401, content={"error": "Unauthorized"})
 
 # ------------------------------------------------------------------
@@ -253,6 +286,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 指标中间件（在鉴权之前注册，确保 401 等也被采集）
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    if request.url.path == "/metrics":
+        return await call_next(request)
+    method = request.method
+    path = request.url.path
+    IN_PROGRESS.labels(method=method, path=path).inc()
+    start_time = time.monotonic()
+    try:
+        response = await call_next(request)
+        duration = time.monotonic() - start_time
+        REQUEST_COUNT.labels(
+            method=method, path=path, status_code=str(response.status_code)
+        ).inc()
+        REQUEST_LATENCY.labels(method=method, path=path).observe(duration)
+        CIRCUIT_STATE.set(
+            {"closed": 0, "open": 1, "half_open": 2}.get(circuit_breaker.state, -1)
+        )
+        return response
+    except Exception:
+        REQUEST_COUNT.labels(method=method, path=path, status_code="500").inc()
+        raise
+    finally:
+        IN_PROGRESS.labels(method=method, path=path).dec()
 
 # 鉴权中间件
 app.middleware("http")(auth_middleware)
@@ -304,6 +363,18 @@ async def health():
     }
 
 # ------------------------------------------------------------------
+# ============ 路由：Prometheus 指标采集 ============
+# ------------------------------------------------------------------
+@app.get("/metrics")
+async def metrics_endpoint():
+    """Prometheus 指标采集端点（无需鉴权）"""
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
+
+
+# ------------------------------------------------------------------
 # ============ 路由：模型列表 ============
 # ------------------------------------------------------------------
 @app.get("/api/models")
@@ -322,6 +393,7 @@ async def list_models(request: Request):
     for attempt in range(max_attempts):
         try:
             async with sess.get(f"{config['ollama']['base_url']}/api/tags") as resp:
+                OLLAMA_REQUESTS.labels(endpoint="/api/tags", status_code=str(resp.status)).inc()
                 data = await resp.json()
                 circuit_breaker.record_success()
                 return data
@@ -329,6 +401,7 @@ async def list_models(request: Request):
             logger.warning(f"Ollama 连接失败 (attempt {attempt+1}/{max_attempts}): {e}")
             if attempt < max_attempts - 1:
                 await asyncio.sleep(config.get("retry", {}).get("backoff_seconds", 1))
+    OLLAMA_REQUESTS.labels(endpoint="/api/tags", status_code="error").inc()
     circuit_breaker.record_failure()
     raise HTTPException(status_code=502, detail="Ollama 后端不可达")
 
@@ -360,6 +433,7 @@ async def generate(request: Request):
             f"{config['ollama']['base_url']}/api/generate",
             json=body,
         ) as resp:
+            OLLAMA_REQUESTS.labels(endpoint="/api/generate", status_code=str(resp.status)).inc()
             data = await resp.json()
             # 记录性能指标
             total_duration = data.get("total_duration", 0) / 1e9  # ns -> s
@@ -369,6 +443,7 @@ async def generate(request: Request):
                 logger.info(f"生成完成: {eval_count} tokens, {total_duration:.2f}s, {tps:.1f} tok/s")
             return data
     except aiohttp.ClientError as e:
+        OLLAMA_REQUESTS.labels(endpoint="/api/generate", status_code="error").inc()
         logger.error(f"Ollama 生成失败: {e}")
         raise HTTPException(status_code=502, detail=f"Ollama 生成失败: {e}")
 
@@ -405,6 +480,7 @@ async def chat_stream(request: Request):
                 f"{config['ollama']['base_url']}/api/generate",
                 json=body,
             ) as resp:
+                OLLAMA_REQUESTS.labels(endpoint="/api/generate", status_code=str(resp.status)).inc()
                 if resp.status != 200:
                     error_text = await resp.text()
                     yield f"data: {json.dumps({'error': error_text})}\n\n"
@@ -432,6 +508,7 @@ async def chat_stream(request: Request):
                             logger.info(f"流式完成: {eval_count} tokens, {total_dur:.2f}s, {tps:.1f} tok/s")
 
         except aiohttp.ClientError as e:
+            OLLAMA_REQUESTS.labels(endpoint="/api/generate", status_code="error").inc()
             logger.error(f"流式转发失败: {e}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
