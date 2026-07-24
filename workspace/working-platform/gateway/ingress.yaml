@@ -78,3 +78,26 @@ spec:
             name: open-webui-service
             port:
               number: 8080
+
+---
+# AI Infra Gateway Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gw-ai-gateway
+  namespace: ai-platform
+  labels:
+    app.kubernetes.io/part-of: gateway
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /gateway
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-infra-gateway
+            port:
+              number: 8000

@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-infra-gateway
+  namespace: ai-platform
+  labels:
+    app: ai-infra-gateway
+    app.kubernetes.io/part-of: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-infra-gateway
+  template:
+    metadata:
+      labels:
+        app: ai-infra-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: ai-infra-gateway:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-infra-gateway
+  namespace: ai-platform
+  labels:
+    app: ai-infra-gateway
+    app.kubernetes.io/part-of: gateway
+spec:
+  selector:
+    app: ai-infra-gateway
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  type: ClusterIP
