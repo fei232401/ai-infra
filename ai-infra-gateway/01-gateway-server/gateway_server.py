@@ -528,7 +528,7 @@ async def chat_stream(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "gateway_server:app",
+        app,
         host=config["server"]["host"],
         port=config["server"]["port"],
         reload=False,
