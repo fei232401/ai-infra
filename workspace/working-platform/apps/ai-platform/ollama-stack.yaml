@@ -49,6 +49,8 @@ spec:
       labels:
         app: ollama
     spec:
+      nodeSelector:
+        node-role: cpu
       containers:
         - name: ollama
           image: ollama/ollama:latest
