@@ -1,6 +1,3 @@
-# kube-prometheus-stack values
-# 与集群实际部署一致（2026-07-26）
-
 grafana:
   enabled: true
   adminPassword: admin123
@@ -9,7 +6,6 @@ grafana:
   grafana.ini:
     server:
       root_url: "%(protocol)s://%(domain)s/grafana"
-      serve_from_sub_path: true
 
 prometheus:
   prometheusSpec:
