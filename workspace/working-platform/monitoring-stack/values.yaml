@@ -13,6 +13,8 @@ grafana:
 
 prometheus:
   prometheusSpec:
+    externalUrl: http://localhost/prometheus
+    routePrefix: /
     retention: 7d
     storageSpec:
       volumeClaimTemplate:

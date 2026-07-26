@@ -50,7 +50,7 @@ spec:
         app: ollama
     spec:
       nodeSelector:
-        node-role: cpu
+        node-role: gpu
       containers:
         - name: ollama
           image: ollama/ollama:latest

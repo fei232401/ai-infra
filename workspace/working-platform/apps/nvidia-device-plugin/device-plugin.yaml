@@ -16,6 +16,8 @@ spec:
       labels:
         name: nvidia-device-plugin-ds
     spec:
+      nodeSelector:
+        node-role: gpu
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists

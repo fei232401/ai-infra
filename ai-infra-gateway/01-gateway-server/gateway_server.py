@@ -470,17 +470,22 @@ async def chat_stream(request: Request):
         body["model"] = config["ollama"]["default_model"]
     body["stream"] = True
 
+    # 自动检测请求格式：messages(对话) vs prompt(补全)
+    is_chat = "messages" in body
+    ollama_endpoint = "/api/chat" if is_chat else "/api/generate"
+
     sess = await get_session()
-    logger.info(f"流式请求: model={body.get('model')}, prompt_len={len(body.get('prompt',''))}")
+    logger.info(f"流式请求: model={body.get('model')}, endpoint={ollama_endpoint}, "
+                f"messages={len(body.get('messages', []))}, prompt_len={len(body.get('prompt',''))}")
 
     async def event_generator():
         """异步生成器——逐块转发 Ollama 的 SSE 流"""
         try:
             async with sess.post(
-                f"{config['ollama']['base_url']}/api/generate",
+                f"{config['ollama']['base_url']}{ollama_endpoint}",
                 json=body,
             ) as resp:
-                OLLAMA_REQUESTS.labels(endpoint="/api/generate", status_code=str(resp.status)).inc()
+                OLLAMA_REQUESTS.labels(endpoint=ollama_endpoint, status_code=str(resp.status)).inc()
                 if resp.status != 200:
                     error_text = await resp.text()
                     yield f"data: {json.dumps({'error': error_text})}\n\n"
@@ -497,6 +502,10 @@ async def chat_stream(request: Request):
                     except json.JSONDecodeError:
                         continue
 
+                    # 统一输出格式：/api/chat 返回 message.content，/api/generate 返回 response
+                    if is_chat and "message" in chunk:
+                        chunk["response"] = chunk["message"].get("content", "")
+
                     # 格式化为 SSE
                     yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
 
@@ -508,7 +517,7 @@ async def chat_stream(request: Request):
                             logger.info(f"流式完成: {eval_count} tokens, {total_dur:.2f}s, {tps:.1f} tok/s")
 
         except aiohttp.ClientError as e:
-            OLLAMA_REQUESTS.labels(endpoint="/api/generate", status_code="error").inc()
+            OLLAMA_REQUESTS.labels(endpoint=ollama_endpoint, status_code="error").inc()
             logger.error(f"流式转发失败: {e}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 

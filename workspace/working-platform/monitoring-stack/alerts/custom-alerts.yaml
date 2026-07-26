@@ -1,0 +1,82 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ai-infra-custom-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring-stack
+    app: kube-prometheus-stack
+    app.kubernetes.io/part-of: sre-lab
+spec:
+  groups:
+    - name: gateway.rules
+      rules:
+        - alert: GatewayHighErrorRate
+          expr: sum(rate(gateway_requests_total{status_code=~"5.."}[5m])) / sum(rate(gateway_requests_total[5m])) > 0.1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "网关 5xx 错误率超过 10%"
+            description: "过去 5 分钟内 5xx 错误率 {{ $value | humanizePercentage }}"
+
+        - alert: GatewayHighLatency
+          expr: histogram_quantile(0.95, sum(rate(gateway_request_duration_seconds_bucket[5m])) by (le)) > 5
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "网关 P95 延迟超过 5 秒"
+            description: "当前 P95 延迟 {{ $value | humanizeDuration }}"
+
+        - alert: GatewayCircuitBreakerOpen
+          expr: gateway_circuit_breaker_state == 1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "网关熔断器已打开"
+            description: "Ollama 后端可能不可达，熔断器已触发"
+
+        - alert: OllamaBackendDown
+          expr: up{job=~".*ollama.*"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Ollama 后端不可达"
+            description: "Ollama 服务已宕机或网络不通"
+
+    - name: infra.rules
+      rules:
+        - alert: NodeHighMemoryUsage
+          expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "节点 {{ $labels.instance }} 内存使用率超过 85%"
+
+        - alert: PodCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total[15m]) * 60 * 15 > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 频繁重启"
+
+        - alert: NodeHighCPUUsage
+          expr: (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) by (instance)) * 100 > 90
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "节点 {{ $labels.instance }} CPU 使用率超过 90%"
+
+        - alert: DiskSpaceRunningLow
+          expr: (1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 > 85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "节点 {{ $labels.instance }} 磁盘使用率超过 85%"
