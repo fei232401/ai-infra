@@ -7,7 +7,11 @@
 ###############################################################################
 
 set -uo pipefail
-
+# ========== 新增：内置日志分流 ==========
+LOG_FILE="./diagnostic-$(date +%Y%m%d-%H%M%S).log"
+# 同时打印终端 + 写入日志，stdout/stderr全部捕获
+exec > >(tee "${LOG_FILE}") 2>&1
+# ========================================
 export KUBECONFIG=${KUBECONFIG:-~/.kube/config}
 DIVIDER="════════════════════════════════════════════════════════════════"
 SECTION() { echo -e "\n$DIVIDER"; echo "  $1"; echo -e "$DIVIDER"; }
@@ -464,4 +468,5 @@ echo "  时间：$(date '+%Y-%m-%d %H:%M:%S %Z')"
 echo "============================================"
 echo ""
 echo "将此输出完整提供给 AI 助手，即可快速同步集群当前状态。"
-echo ""
+echo ""echo -e "\n✅ 日志文件已生成：${LOG_FILE}"
+echo "查看日志命令：cat ${LOG_FILE}"

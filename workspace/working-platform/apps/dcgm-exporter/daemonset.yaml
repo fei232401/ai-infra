@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dcgm-exporter
+  namespace: monitoring
+  labels:
+    app: dcgm-exporter
+spec:
+  selector:
+    matchLabels:
+      app: dcgm-exporter
+  template:
+    metadata:
+      labels:
+        app: dcgm-exporter
+    spec:
+      nodeSelector:
+        node-role: gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: dcgm-exporter
+          image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.8-3.6.0-ubuntu22.04
+          ports:
+            - containerPort: 9400
+              name: metrics
+          env:
+            - name: DCGM_EXPORTER_LISTEN_ADDRESS
+              value: ":9400"
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,utility"
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: wsl-lib
+              mountPath: /usr/lib/wsl/lib
+              readOnly: true
+            - name: wsl-drivers
+              mountPath: /usr/lib/wsl/drivers
+              readOnly: true
+          livenessProbe:
+            httpGet: { path: /health, port: 9400 }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /health, port: 9400 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: wsl-lib
+          hostPath: { path: /usr/lib/wsl/lib, type: DirectoryOrCreate }
+        - name: wsl-drivers
+          hostPath: { path: /usr/lib/wsl/drivers, type: DirectoryOrCreate }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dcgm-exporter
+  namespace: monitoring
+  labels:
+    app: dcgm-exporter
+spec:
+  ports:
+    - name: metrics
+      port: 9400
+      targetPort: 9400
+  selector:
+    app: dcgm-exporter
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dcgm-exporter
+  namespace: monitoring
+  labels:
+    app: dcgm-exporter
+    release: monitoring-stack
+spec:
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+  selector:
+    matchLabels:
+      app: dcgm-exporter

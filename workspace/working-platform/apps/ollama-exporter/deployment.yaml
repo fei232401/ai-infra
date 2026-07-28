@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama-exporter
+  namespace: ai-platform
+  labels:
+    app: ollama-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama-exporter
+  template:
+    metadata:
+      labels:
+        app: ollama-exporter
+    spec:
+      containers:
+        - name: exporter
+          image: ollama-exporter:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 9110
+              name: metrics
+          livenessProbe:
+            httpGet: { path: /, port: 9110 }
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /, port: 9110 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-exporter
+  namespace: ai-platform
+  labels:
+    app: ollama-exporter
+spec:
+  ports:
+    - name: metrics
+      port: 9110
+      targetPort: 9110
+  selector:
+    app: ollama-exporter
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ollama-exporter
+  namespace: ai-platform
+  labels:
+    app: ollama-exporter
+    release: monitoring-stack
+spec:
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+  selector:
+    matchLabels:
+      app: ollama-exporter

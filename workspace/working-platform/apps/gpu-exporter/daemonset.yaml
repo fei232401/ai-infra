@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gpu-exporter
+  namespace: monitoring
+  labels:
+    app: gpu-exporter
+spec:
+  selector:
+    matchLabels:
+      app: gpu-exporter
+  template:
+    metadata:
+      labels:
+        app: gpu-exporter
+    spec:
+      nodeSelector:
+        node-role: gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: exporter
+          image: nvidia-smi-exporter:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 9400
+              name: metrics
+          env:
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,utility"
+            - name: LD_LIBRARY_PATH
+              value: "/usr/lib/wsl/lib:/usr/lib/x86_64-linux-gnu"
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: wsl-lib
+              mountPath: /usr/lib/wsl/lib
+              readOnly: true
+            - name: wsl-drivers
+              mountPath: /usr/lib/wsl/drivers
+              readOnly: true
+          livenessProbe:
+            httpGet: { path: /, port: 9400 }
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /, port: 9400 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 300m, memory: 128Mi }
+      volumes:
+        - name: wsl-lib
+          hostPath: { path: /usr/lib/wsl/lib, type: DirectoryOrCreate }
+        - name: wsl-drivers
+          hostPath: { path: /usr/lib/wsl/drivers, type: DirectoryOrCreate }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpu-exporter
+  namespace: monitoring
+  labels:
+    app: gpu-exporter
+spec:
+  ports:
+    - name: metrics
+      port: 9400
+      targetPort: 9400
+  selector:
+    app: gpu-exporter
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gpu-exporter
+  namespace: monitoring
+  labels:
+    app: gpu-exporter
+    release: monitoring-stack
+spec:
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+  selector:
+    matchLabels:
+      app: gpu-exporter
