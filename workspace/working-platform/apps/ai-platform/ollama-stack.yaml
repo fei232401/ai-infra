@@ -1,20 +1,8 @@
-apiVersion: v1
-kind: Service
-metadata:
-  name: ollama-headless
-  namespace: ai-platform
-  labels:
-    app: ollama
-spec:
-  type: ClusterIP
-  clusterIP: None
-  selector:
-    app: ollama
-  ports:
-    - name: api
-      port: 11434
-      targetPort: 11434
----
+# ============================================================
+# Ollama — CPU 推理服务 (Deployment + 独立 PVC)
+# PVC ollama-models 单独创建，不在此文件管理（保护模型数据）
+# ============================================================
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -32,14 +20,13 @@ spec:
       targetPort: 11434
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: ollama
   namespace: ai-platform
   labels:
     app: ollama
 spec:
-  serviceName: ollama-headless
   replicas: 1
   selector:
     matchLabels:
@@ -50,7 +37,7 @@ spec:
         app: ollama
     spec:
       nodeSelector:
-        node-role: gpu
+        node-role: cpu
       containers:
         - name: ollama
           image: ollama/ollama:latest
@@ -99,13 +86,7 @@ spec:
           volumeMounts:
             - name: ollama-data
               mountPath: /root/.ollama
-  volumeClaimTemplates:
-    - metadata:
-        name: ollama-data
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        storageClassName: local-path
-        resources:
-          requests:
-            storage: 20Gi
+      volumes:
+        - name: ollama-data
+          persistentVolumeClaim:
+            claimName: ollama-models
