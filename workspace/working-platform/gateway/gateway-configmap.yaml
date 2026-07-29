@@ -39,3 +39,18 @@ data:
       enabled: true
       max_attempts: 2
       backoff_seconds: 1
+
+    backends:
+      cpu_ollama:
+        base_url: "http://ollama-service.ai-platform.svc.cluster.local:11434"
+        type: "ollama"
+        models:
+          - "qwen2.5:1.5b"
+          - "qwen2.5:3b"
+          - "qwen2.5"
+      gpu_vllm:
+        base_url: "http://vllm-service.ai-platform.svc.cluster.local:8000"
+        type: "vllm_openai"
+        models:
+          - "qwen2.5-7b-awq"
+          - "qwen2.5:7b"
