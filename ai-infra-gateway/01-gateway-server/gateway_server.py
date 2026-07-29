@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AI Infra Gateway v10.0 — 双后端路由: CPU Ollama + GPU vLLM"""
+"""AI Infra Gateway v11.0 — 双后端路由: CPU Ollama + GPU vLLM (chat completions fix)"""
 import asyncio, time, json, logging, os
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -29,6 +29,15 @@ def get_backend(model_name: str) -> tuple:
             return bconf["base_url"], bconf["type"]
     return config["ollama"]["base_url"], "ollama"
 
+# ---------- helper: 统一构造 chat messages ----------
+def _to_messages(body: dict) -> list:
+    """将任何请求格式统一转换为 messages 列表"""
+    if "messages" in body:
+        return body["messages"]
+    prompt = body.get("prompt", "")
+    return [{"role": "user", "content": prompt}]
+
+# ---------- Prometheus ----------
 REQUEST_COUNT = Counter('gateway_requests_total', 'Total requests', ['method', 'path', 'status_code'])
 REQUEST_LATENCY = Histogram('gateway_request_duration_seconds', 'Request latency', ['method', 'path'],
     buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0])
@@ -37,6 +46,7 @@ CIRCUIT_STATE = Gauge('gateway_circuit_breaker_state', 'Circuit breaker state')
 OLLAMA_REQUESTS = Counter('gateway_ollama_requests_total', 'Ollama backend', ['endpoint', 'status_code'])
 VLLM_REQUESTS = Counter('gateway_vllm_requests_total', 'vLLM backend', ['endpoint', 'status_code'])
 
+# ---------- Rate Limiting ----------
 class TokenBucket:
     def __init__(self, capacity, refill_rate):
         self.capacity, self.refill_rate = capacity, refill_rate
@@ -52,6 +62,7 @@ class TokenBucket:
 
 buckets = defaultdict(lambda: TokenBucket(config["rate_limit"]["capacity"], config["rate_limit"]["refill_rate"]))
 
+# ---------- Circuit Breaker ----------
 class CircuitBreaker:
     CLOSED, OPEN, HALF_OPEN = "closed", "open", "half_open"
     def __init__(self, ft, ts):
@@ -75,6 +86,7 @@ class CircuitBreaker:
 
 circuit_breaker = CircuitBreaker(config["circuit_breaker"]["failure_threshold"], config["circuit_breaker"]["timeout_seconds"])
 
+# ---------- Auth ----------
 async def auth_middleware(request: Request, call_next):
     if request.url.path in ("/health", "/docs", "/openapi.json", "/redoc", "/api/auth/token", "/metrics"):
         return await call_next(request)
@@ -92,6 +104,7 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     return JSONResponse(status_code=401, content={"error": "Unauthorized"})
 
+# ---------- Session ----------
 session: Optional[aiohttp.ClientSession] = None
 
 async def get_session() -> aiohttp.ClientSession:
@@ -101,19 +114,21 @@ async def get_session() -> aiohttp.ClientSession:
                                          timeout=aiohttp.ClientTimeout(total=config["ollama"]["timeout"]))
     return session
 
+# ---------- App ----------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("=" * 50)
-    logger.info("AI Infra Gateway v10.0")
+    logger.info("AI Infra Gateway v11.0")
     logger.info(f"Backends: {list(config.get('backends', {}).keys())}")
     logger.info("=" * 50)
     yield
     if session and not session.closed:
         await session.close()
 
-app = FastAPI(title="AI Infra Gateway", version="10.0.0", lifespan=lifespan)
+app = FastAPI(title="AI Infra Gateway", version="11.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# ---------- Middleware ----------
 @app.middleware("http")
 async def metrics_middleware(request: Request, call_next):
     if request.url.path == "/metrics":
@@ -134,6 +149,7 @@ async def metrics_middleware(request: Request, call_next):
 
 app.middleware("http")(auth_middleware)
 
+# ---------- Endpoints ----------
 @app.post("/api/auth/token")
 async def generate_token():
     now = datetime.now(tz=timezone.utc)
@@ -143,7 +159,7 @@ async def generate_token():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "timestamp": time.time(), "circuit_breaker": circuit_breaker.state, "version": "10.0"}
+    return {"status": "ok", "timestamp": time.time(), "circuit_breaker": circuit_breaker.state, "version": "11.0"}
 
 @app.get("/metrics")
 async def metrics_endpoint():
@@ -178,6 +194,7 @@ async def list_models(request: Request):
                 logger.warning(f"vLLM model list failed: {e}")
     return {"models": all_models}
 
+# ==================== /api/generate ====================
 @app.post("/api/generate")
 async def generate(request: Request):
     if config["rate_limit"]["enabled"] and not buckets["default"].consume():
@@ -188,20 +205,23 @@ async def generate(request: Request):
     body["stream"] = False
     sess = await get_session()
     logger.info(f"Generate: model={model}, backend={backend_type}")
+
     if backend_type == "vllm_openai":
-        if "messages" in body:
-            vllm_body = {"model": model, "messages": body["messages"], "stream": False}
-            endpoint = f"{base_url}/v1/chat/completions"
-        else:
-            vllm_body = {"model": model, "prompt": body.get("prompt", ""), "max_tokens": body.get("max_tokens", 512), "stream": False}
-            endpoint = f"{base_url}/v1/completions"
+        # 统一走 /v1/chat/completions，用 _to_messages 兼容 prompt 和 messages 两种格式
+        vllm_body = {
+            "model": model,
+            "messages": _to_messages(body),
+            "max_tokens": body.get("max_tokens", 512),
+            "stream": False,
+        }
+        endpoint = f"{base_url}/v1/chat/completions"
         try:
             async with sess.post(endpoint, json=vllm_body) as resp:
-                VLLM_REQUESTS.labels(endpoint=endpoint.split("/")[-1], status_code=str(resp.status)).inc()
+                VLLM_REQUESTS.labels(endpoint="chat_completions", status_code=str(resp.status)).inc()
                 data = await resp.json()
                 if "choices" in data:
                     choice = data["choices"][0]
-                    content = choice.get("message", {}).get("content", "") or choice.get("text", "")
+                    content = choice.get("message", {}).get("content", "")
                     return {"model": model, "response": content, "done": True, "backend": "vllm"}
                 return data
         except aiohttp.ClientError as e:
@@ -218,6 +238,7 @@ async def generate(request: Request):
             circuit_breaker.record_failure()
             raise HTTPException(status_code=502, detail=f"Ollama error: {e}")
 
+# ==================== /api/chat/stream ====================
 @app.post("/api/chat/stream")
 async def chat_stream(request: Request):
     if config["rate_limit"]["enabled"] and not buckets["default"].consume():
@@ -230,17 +251,18 @@ async def chat_stream(request: Request):
     logger.info(f"Stream: model={model}, backend={backend_type}, is_chat={is_chat}")
 
     if backend_type == "vllm_openai":
-        if is_chat:
-            vllm_body = {"model": model, "messages": body["messages"], "stream": True}
-            vllm_ep = "/v1/chat/completions"
-        else:
-            vllm_body = {"model": model, "prompt": body.get("prompt", ""), "stream": True}
-            vllm_ep = "/v1/completions"
+        # 统一走 /v1/chat/completions
+        vllm_body = {
+            "model": model,
+            "messages": _to_messages(body),
+            "stream": True,
+        }
+        vllm_ep = "/v1/chat/completions"
         sess = await get_session()
         async def gen():
             try:
                 async with sess.post(f"{base_url}{vllm_ep}", json=vllm_body) as resp:
-                    VLLM_REQUESTS.labels(endpoint=vllm_ep, status_code=str(resp.status)).inc()
+                    VLLM_REQUESTS.labels(endpoint="chat_completions", status_code=str(resp.status)).inc()
                     if resp.status != 200:
                         yield f"data: {json.dumps({'error': await resp.text()})}\n\n"
                         return
@@ -257,7 +279,7 @@ async def chat_stream(request: Request):
                             choices = chunk.get("choices", [])
                             if not choices: continue
                             delta = choices[0].get("delta", {})
-                            text = delta.get("content", "") or delta.get("text", "")
+                            text = delta.get("content", "")
                             finish = choices[0].get("finish_reason")
                             if finish == "stop":
                                 yield f"data: {json.dumps({'model': model, 'response': '', 'done': True, 'backend': 'vllm', 'eval_count': tok_count})}\n\n"
@@ -265,7 +287,7 @@ async def chat_stream(request: Request):
                                 tok_count += 1
                                 yield f"data: {json.dumps({'model': model, 'response': text, 'done': False, 'backend': 'vllm'}, ensure_ascii=False)}\n\n"
             except aiohttp.ClientError as e:
-                VLLM_REQUESTS.labels(endpoint=vllm_ep, status_code="error").inc()
+                VLLM_REQUESTS.labels(endpoint="chat_completions", status_code="error").inc()
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
         return StreamingResponse(gen(), media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
