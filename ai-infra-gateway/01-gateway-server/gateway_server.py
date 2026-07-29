@@ -211,7 +211,7 @@ async def generate(request: Request):
         vllm_body = {
             "model": model,
             "messages": _to_messages(body),
-            "max_tokens": body.get("max_tokens", 512),
+            "max_tokens": body.get("max_tokens", 100),
             "stream": False,
         }
         endpoint = f"{base_url}/v1/chat/completions"

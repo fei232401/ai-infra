@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: gateway
-          image: ai-infra-gateway:v10
+          image: ai-infra-gateway:v11
           imagePullPolicy: Never
           ports:
             - containerPort: 8000
