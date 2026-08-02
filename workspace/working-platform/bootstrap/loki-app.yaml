@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: 'git@github.com:fei232401/ai-infra.git'
+    repoURL: 'https://github.com/fei232401/ai-infra.git'
     targetRevision: main
     path: workspace/working-platform/apps/loki
   destination:
