@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 备份与日志产物
+*.bak
+*.log
+
+# 本地配置
+.env

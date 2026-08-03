@@ -1,8 +1,11 @@
 # Phase 0 环境交接文档 — 2026-08-04
 
-> **用途**：明天或任何时候回来，读这一份 + `Blueprint.md`（蓝图）就能接上，无需重新喂上下文。
-> **配套**：项目蓝图在 `Blueprint.md`（当前在 /home/fei/projects/Blueprint.md，建议移入本仓库 docs/）。
+> **用途**：明天或任何时候回来，读这一份 + `docs/BLUEPRINT.md`（蓝图）就能接上，无需重新喂上下文。
+> **配套**：项目蓝图已移入 `docs/BLUEPRINT.md`（纳入 git 版本控制）。
 > **本文件状态**：随环境变化持续更新。
+>
+> ## ✅ Phase 0 状态：已完成（2026-08-04）
+> 集群修复 + GPU 接入 + 监控 + 双后端全部就绪。目录清理已完成。**下一步 = Phase 1（HeteroServe v3 骨架）**，见第六节。
 
 ---
 
@@ -147,27 +150,39 @@ kubectl exec -it <pod> -- sh -c 'echo "FROM /tmp/model.gguf" > /tmp/Modelfile &&
 
 ---
 
-## 五、GitOps 结构与目录
+## 五、GitOps 结构与工作模式（2026-08-04 定稿）
 
 ```
-project/ (git 仓库 ai-infra, ArgoCD 绑定)
-├── docs/                    ← 本文档 + 蓝图（建议移入）
+project/ (git 仓库 ai-infra)
+├── docs/                    ← BLUEPRINT.md + environment.md（项目文档）
 ├── k3d/                     ← 集群配置 (registries.yaml + manifests/)
-│   └── manifests/
-│       ├── nvidia-device-plugin.yaml
-│       └── gpu-test-pod.yaml
+│   └── manifests/           ← nvidia-device-plugin.yaml, gpu-test-pod.yaml
 ├── ai-infra-gateway/        ← 数据面 gateway 代码 (Phase A 基线)
 │   └── 01-gateway-server/
-├── workspace/working-platform/  ← ArgoCD app-of-apps
-│   ├── bootstrap/           ← root-app + 各 Application
-│   ├── gateway/             ← gateway manifests
-│   ├── monitoring-stack/    ← kube-prometheus-stack values
-│   └── apps/                ← 各应用 (ai-platform, loki, promtail, exporters)
+├── scripts/                 ← cluster-diagnostic.sh（工具脚本）
+└── workspace/working-platform/  ← 部署 manifests（app-of-apps 结构）
+    ├── bootstrap/           ← 预留的 ArgoCD Application（dormant，Phase 4 用）
+    ├── gateway/             ← gateway manifests
+    ├── monitoring-stack/    ← kube-prometheus-stack values
+    └── apps/                ← 各应用 (ai-platform, loki, promtail, exporters)
 ```
 
-**ArgoCD 现状**：仓库里定义了 app-of-apps（root-app 自愈+prune），但**新集群还没部署 ArgoCD**。目前处于"manifests 进 git + kubectl 手动应用"模式——这对开发期是最舒服的。何时启用 ArgoCD 见《目录结构与 GitOps 评估》部分。
+### 工作模式决策（已定稿）
 
-**提交纪律**：所有 manifest 变更 → git add/commit/push（防止未来 ArgoCD sync 时回滚/漂移）。
+**✅ 采用：Git 即源 + kubectl apply**
+**⏸️ 暂缓：ArgoCD 监听/自愈同步（不部署）**
+
+理由：
+- 开发期自愈会回滚实验性改动，束手束脚（个人单机没必要）
+- `bootstrap/` 下的 ArgoCD Application 定义保留为 **dormant**，作为 Phase 4 简历包装时的素材
+- **提交纪律**：所有 manifest 变更 → git add/commit/push，然后 kubectl apply
+
+### 2026-08-04 目录清理记录
+
+- 🗑️ 删除：`diagnostic-20260727-193135.log`、`gateway_server.py.v9.bak`、缓存目录
+- 📦 移出 git → `/home/fei/notes/`：`AI_INFRA_DEVELOPMENT_LOG.md`、`教材.md`（学习资料不入库）
+- 📂 归位：`cluster-diagnostic.sh` → `scripts/`
+- 🆕 新建：`.gitignore`（缓存/日志/备份）、`docs/`（蓝图移入）
 
 ---
 
