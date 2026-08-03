@@ -1,0 +1,102 @@
+# ============================================================
+# vLLM — GPU 推理服务 (Deployment + Service)
+# WSL2 GPU 配方 (2026-08-03 调试结论):
+#   1. privileged —— 绕过 cgroup 设备限制访问 /dev/dxg
+#   2. /dev/dxg + 驱动库保持原始目录结构 (libcuda loader 依赖)
+#   3. LD_LIBRARY_PATH 指向驱动版本目录 + wsl/lib
+#   4. VLLM_WSL2_ENABLE_PIN_MEMORY=1 —— vLLM 在 WSL2 默认禁用 pinned memory (UVA 前提)
+# 模型: /home/fei/models/qwen2.5-7b-awq (宿主机路径, hostPath 挂载)
+# ============================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service
+  namespace: ai-platform
+  labels:
+    app: vllm
+spec:
+  type: ClusterIP
+  selector:
+    app: vllm
+  ports:
+    - name: api
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  namespace: ai-platform
+  labels:
+    app: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+  template:
+    metadata:
+      labels:
+        app: vllm
+    spec:
+      nodeSelector:
+        nvidia.com/gpu: "true"        # 只调度到 GPU 节点 (agent-0)
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args:
+            - --model
+            - /models/qwen2.5-7b-awq
+            - --gpu-memory-utilization
+            - "0.85"
+            - --max-model-len
+            - "4096"
+          env:
+            - name: LD_LIBRARY_PATH
+              value: "/usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127:/usr/lib/wsl/lib:/usr/local/nvidia/lib64"
+            - name: VLLM_WSL2_ENABLE_PIN_MEMORY
+              value: "1"
+          resources:
+            requests:
+              cpu: "4"
+              memory: 4Gi
+            limits:
+              cpu: "8"
+              memory: 6Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: dxg
+              mountPath: /dev/dxg
+            - name: driver-lib
+              mountPath: /usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127
+            - name: wsl-lib
+              mountPath: /usr/lib/wsl/lib
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: dxg
+          hostPath:
+            path: /dev/dxg
+        - name: driver-lib
+          hostPath:
+            path: /usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127
+        - name: wsl-lib
+          hostPath:
+            path: /usr/lib/wsl/lib
+        - name: model
+          hostPath:
+            path: /home/fei/models
