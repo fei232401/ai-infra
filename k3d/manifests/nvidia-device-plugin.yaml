@@ -1,0 +1,61 @@
+# NVIDIA device plugin — 让集群宣告 nvidia.com/gpu 资源
+# 仅部署在指定 GPU 节点 (agent-0)，避免三节点都宣告同一张物理卡
+#
+# WSL2 GPU 三件套（调试结论）：
+#   1. privileged: true  —— 绕过 cgroup 设备限制（/dev/dxg 才能访问）
+#   2. 挂载 /dev/dxg     —— WSL2 的 GPU 设备节点（不是 /dev/nvidia*）
+#   3. 挂载驱动库目录     —— 版本子目录里的 libnvidia-ml.so.1/libcuda 等
+#                           + /usr/lib/wsl/lib（libdxcore.so 等）
+#   4. LD_LIBRARY_PATH 指向上述目录
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nvidia-device-plugin-daemonset
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: nvidia-device-plugin-ds
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        name: nvidia-device-plugin-ds
+    spec:
+      nodeSelector:
+        nvidia.com/gpu: "true"    # 只跑在打上该标签的节点
+      priorityClassName: system-node-critical
+      containers:
+        - name: nvidia-device-plugin-ctr
+          image: nvcr.io/nvidia/k8s-device-plugin:v0.17.0
+          args:
+            - --device-list-strategy=volume-mounts
+            - --device-discovery-strategy=nvml
+          env:
+            - name: LD_LIBRARY_PATH
+              value: "/usr/lib/wsl/drivers:/usr/lib/wsl/lib"
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: device-gpu
+              mountPath: /dev/dxg
+            - name: driver-lib
+              mountPath: /usr/lib/wsl/drivers
+            - name: wsl-lib
+              mountPath: /usr/lib/wsl/lib
+            - name: device-plugin
+              mountPath: /var/lib/kubelet/device-plugins
+      volumes:
+        - name: device-gpu
+          hostPath:
+            path: /dev/dxg
+        - name: driver-lib
+          hostPath:
+            path: /usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127
+        - name: wsl-lib
+          hostPath:
+            path: /usr/lib/wsl/lib
+        - name: device-plugin
+          hostPath:
+            path: /var/lib/kubelet/device-plugins

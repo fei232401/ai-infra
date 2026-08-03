@@ -1,0 +1,8 @@
+# k3s containerd registry mirrors — 让集群内 containerd 走 daocloud 加速
+# 与 docker daemon 的 registry-mirrors 保持一致（见 /etc/docker/daemon.json）
+mirrors:
+  docker.io:
+    endpoint:
+      - "https://docker.m.daocloud.io"
+      - "https://docker.jsdelivr.fyi"
+      - "https://docker.1ms.run"
