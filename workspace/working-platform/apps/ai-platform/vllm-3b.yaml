@@ -1,0 +1,112 @@
+# ============================================================
+# vLLM-3B — GPU 主力推理服务 (替换原 7B, 给 LMCache 腾显存)
+# WSL2 GPU 配方 + LMCache 分层缓存
+#
+# 显存规划 (8GB): 权重 2.1 + LMCache 1.3 + 激活 0.4 = 3.8GB, 余量给 KV
+# 与 vllm-0.5b 共用 GPU (gpu_memory_utilization 各自预算)
+# ============================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-3b-service
+  namespace: ai-platform
+  labels:
+    app: vllm-3b
+spec:
+  type: ClusterIP
+  selector:
+    app: vllm-3b
+  ports:
+    - name: api
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-3b
+  namespace: ai-platform
+  labels:
+    app: vllm-3b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-3b
+  template:
+    metadata:
+      labels:
+        app: vllm-3b
+    spec:
+      nodeSelector:
+        nvidia.com/gpu: "true"
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args:
+            - --model
+            - /models/qwen2.5-3b-awq
+            - --gpu-memory-utilization
+            - "0.55"
+            - --max-model-len
+            - "5000"
+            - --enforce-eager
+            - --max-num-seqs
+            - "4"
+            - --kv-transfer-config
+            - '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_buffer_size":100000000}'
+          env:
+            - name: LD_LIBRARY_PATH
+              value: "/usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127:/usr/lib/wsl/lib:/usr/local/nvidia/lib64"
+            - name: VLLM_WSL2_ENABLE_PIN_MEMORY
+              value: "1"
+            - name: LMCACHE_CONFIG_FILE
+              value: /config/lmcache.yaml
+          resources:
+            requests:
+              cpu: "4"
+              memory: 6Gi
+            limits:
+              cpu: "8"
+              memory: 6Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: dxg
+              mountPath: /dev/dxg
+            - name: driver-lib
+              mountPath: /usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127
+            - name: wsl-lib
+              mountPath: /usr/lib/wsl/lib
+            - name: model
+              mountPath: /models
+            - name: lmcache-config
+              mountPath: /config
+      volumes:
+        - name: dxg
+          hostPath:
+            path: /dev/dxg
+        - name: driver-lib
+          hostPath:
+            path: /usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127
+        - name: wsl-lib
+          hostPath:
+            path: /usr/lib/wsl/lib
+        - name: model
+          hostPath:
+            path: /home/fei/models
+        - name: lmcache-config
+          configMap:
+            name: lmcache-config

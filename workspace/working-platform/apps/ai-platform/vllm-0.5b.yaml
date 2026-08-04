@@ -1,0 +1,101 @@
+# ============================================================
+# vLLM-0.5B — GPU 快速预推理/低阶 tier
+# 用途: 复杂度评估 / LLM-as-Judge / 简单请求快速响应
+# 无 LMCache (省显存给主实例), gpu_memory_utilization 0.20
+# ============================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-0.5b-service
+  namespace: ai-platform
+  labels:
+    app: vllm-0.5b
+spec:
+  type: ClusterIP
+  selector:
+    app: vllm-0.5b
+  ports:
+    - name: api
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-0.5b
+  namespace: ai-platform
+  labels:
+    app: vllm-0.5b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-0.5b
+  template:
+    metadata:
+      labels:
+        app: vllm-0.5b
+    spec:
+      nodeSelector:
+        nvidia.com/gpu: "true"
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args:
+            - --model
+            - /models/qwen2.5-0.5b-awq
+            - --gpu-memory-utilization
+            - "0.20"
+            - --max-model-len
+            - "5000"
+            - --enforce-eager
+            - --max-num-seqs
+            - "8"
+          env:
+            - name: LD_LIBRARY_PATH
+              value: "/usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127:/usr/lib/wsl/lib:/usr/local/nvidia/lib64"
+            - name: VLLM_WSL2_ENABLE_PIN_MEMORY
+              value: "1"
+          resources:
+            requests:
+              cpu: "2"
+              memory: 3Gi
+            limits:
+              cpu: "4"
+              memory: 3Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: dxg
+              mountPath: /dev/dxg
+            - name: driver-lib
+              mountPath: /usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127
+            - name: wsl-lib
+              mountPath: /usr/lib/wsl/lib
+            - name: model
+              mountPath: /models
+      volumes:
+        - name: dxg
+          hostPath:
+            path: /dev/dxg
+        - name: driver-lib
+          hostPath:
+            path: /usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127
+        - name: wsl-lib
+          hostPath:
+            path: /usr/lib/wsl/lib
+        - name: model
+          hostPath:
+            path: /home/fei/models

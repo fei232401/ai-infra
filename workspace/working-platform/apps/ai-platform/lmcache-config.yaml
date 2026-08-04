@@ -1,0 +1,14 @@
+# LMCache 分层缓存配置 — HeteroServe v3 中心
+# vLLM 管 GPU 热层, LMCache 卸载 KV 到 CPU(warm) + SSD(cold)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lmcache-config
+  namespace: ai-platform
+data:
+  lmcache.yaml: |
+    chunk_size: 256              # KV 缓存分块粒度 (tokens)
+    local_cpu: True              # 启用 CPU 缓存层
+    max_local_cpu_size: 4.0      # CPU 缓存上限 (GB)
+    local_disk: "/tmp/lmcache_disk"   # SSD 缓存目录
+    max_local_disk_size: 10.0    # SSD 缓存上限 (GB)
