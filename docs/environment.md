@@ -186,16 +186,32 @@ project/ (git 仓库 ai-infra)
 
 ---
 
-## 六、下一步（Phase 1：HeteroServe v3 骨架）
+## 六、Phase 1 进度（HeteroServe v3 骨架）
 
-详见 `Blueprint.md` 第七节。核心：
+### ✅ 已完成（2026-08-05）
 
-1. **vLLM 调参矩阵**（H2）：`gpu_memory_utilization` 0.7/0.8/0.9 × `max_num_seqs` 8/16/32，记录真实 throughput/latency。
-2. **LMCache 接入**（H1）：重点研究 `study/LMCache` 源码，分层缓存 GPU/CPU/SSD。
-3. **前缀复用 benchmark**（H3）：固定 5K 共享前缀 + 变化尾巴，对比缓存前后 TTFT/命中率。
-4. 缓存指标暴露给 Prometheus（H4），为 Phase 2 调度器联动做准备。
+1. **LMCache 接入**（H1）：vLLM 0.26 镜像内置 lmcache 0.5.2。接入方式 = `LMCACHE_CONFIG_FILE` + `--kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'`。
+   - **踩坑**：8GB 上 LMCache 连接器需 ~1.3GB 显存，7B 塞不下 → **换 3B-AWQ**（主因）
+   - **踩坑**：OOM → `max_local_cpu_size` 4GB→1GB + `use_gds: False`（WSL2 不支持 cufile）
+   - **踩坑**：GPU KV 容量有限 → 需要长互异前缀才能触发逐出（见 benchmark）
+2. **GPU 层换 3B**：vLLM-3B（gpu_memory_utilization 0.55，max-model-len 5000，enforce-eager）。**7B 已下线**（8GB 塞不下 LMCache）。
+3. **0.5B GPU 实例已砍**（设计决策）：启发式复杂度评估已够，8GB 拥挤。模型文件保留在 `/home/fei/models/qwen2.5-0.5b-awq`。
+4. **前缀复用 benchmark**（H3）：`heteroserve/benchmark/benchmark.py`
+   - 场景：20 个互异 4000-token 前缀（80K > GPU KV 65K）
+   - **基线（无 LMCache）**：被逐出前缀 warm TTFT = **0.60s**（重新 prefill）
+   - **LMCache 版**：= **0.11-0.19s**（CPU/SSD 恢复）→ **3-5× 提速**
+   - 未逐出前缀两者均 0.04s（vLLM GPU 缓存）
+   - **诚实口径**：LMCache 增量价值在"GPU KV 超容量"场景，非替代 vLLM 缓存
+5. **缓存指标入 Prometheus**（H4）：vllm-servicemonitor（`release: monitoring`），命中率 = `prefix_cache_hits/queries_total`（实测 27.6%），Phase 2 调度器数据源。
 
-**深挖区学习顺序**（Blueprint §6.1）：vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
+### ⏳ 剩余（可选）
+
+- **H2 vLLM 调参矩阵**：gpu_memory_utilization × max_num_seqs 系统扫描
+- **H6 观测面板**：Grafana GPU/缓存/LLM 面板
+- **HeteroServe README/文档**
+
+### 深挖区学习顺序（Blueprint §6.1）
+vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
 
 ---
 
