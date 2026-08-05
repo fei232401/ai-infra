@@ -5,7 +5,7 @@ metadata:
   namespace: ai-platform
   labels:
     app: ai-infra-gateway
-    release: monitoring-stack
+    release: monitoring
 spec:
   selector:
     matchLabels:

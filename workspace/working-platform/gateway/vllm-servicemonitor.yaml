@@ -1,0 +1,17 @@
+# ServiceMonitor — 让 Prometheus 抓取 vLLM 缓存指标
+# 调度器(cache-aware 路由)通过 prefix_cache_hits/queries 计算缓存命中率
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllm-3b
+  namespace: ai-platform
+  labels:
+    app: vllm-3b
+    release: monitoring    # 必须匹配 Prometheus CR 的 serviceMonitorSelector (release: monitoring)
+spec:
+  selector:
+    matchLabels:
+      app: vllm-3b
+  endpoints:
+    - port: api
+      path: /metrics
