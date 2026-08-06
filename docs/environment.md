@@ -4,9 +4,9 @@
 > **配套**：项目蓝图已移入 `docs/BLUEPRINT.md`（纳入 git 版本控制）。
 > **本文件状态**：随环境变化持续更新。
 >
-> ## ✅ Phase 0 已完成（2026-08-04）· ✅ Phase 1 已完成（2026-08-06）
-> Phase 1（HeteroServe v3 骨架）DoD 全部勾完：LMCache 接入 + 前缀复用 benchmark（3-5×）+ 调参矩阵 + 指标入 Prometheus。
-> 推荐生产配置已落地：**gpu=0.8 / max_num_seqs=16 / cpu_cache=1GB**。**下一步 = Phase 2（CyberRouter v2）**，见 BLUEPRINT 第七节。
+> ## ✅ Phase 0-4 全部完成（2026-08-04 → 2026-08-06）
+> Phase 0 环境 / Phase 1 HeteroServe（LMCache 3-5×+调参矩阵）/ Phase 2 CyberRouter（Go Operator+CRD+快照）/ Phase 3 联动（预判性降级 Demo）/ Phase 4 包装（两个 README+DoD 回填）。
+> 推荐生产配置：**gpu=0.8 / max_num_seqs=16 / cpu_cache=1GB**。**下一步 = 深度解构代码 + 工程化思维 + 模拟面试深挖**。
 
 ---
 
@@ -294,3 +294,4 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
 | v1.4 | 2026-08-06 | **Phase 2 核心完成**：P2-1→P2-4 + 端到端闭环验证（Operator→ConfigMap→gateway→决策路由）。遗留：model 名映射 gap、预判降级端到端（Phase 3） |
 | v1.5 | 2026-08-06 | **Phase 2 完整收尾**：CRD 热更新实测 + model 映射修复（v14，vllm 真实回答）+ snapshot 刷新 hash 修复 + ollama chat/stream 端到端。遗留：ollama generate messages 兼容、预判降级（Phase 3） |
 | v1.6 | 2026-08-06 | **Phase 3 完成**：联动闭环。Operator 指标采集→快照动态状态→预判性降级 Demo（GPU 忙 P99≈1100>800 → 主动降级 ollama，证据链完整）。踩坑：waiting 恒 0 用 running、kubelet 挂载延迟 |
+| v1.7 | 2026-08-06 | **Phase 4 包装完成**：两个 README（cyberrouter/heteroserve）+ BLUEPRINT DoD/量化目标回填。全部 Phase 完成，进入深度解构+面试深挖阶段 |
