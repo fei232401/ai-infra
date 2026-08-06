@@ -107,7 +107,9 @@ def _apply_dynamic_decision(snap: dict, action: dict, token_count: int, reasons:
     status = _tier_status(snap, tier)
     if status is None:
         return  # 快照无动态状态 → 静态决策
-    slo_ms = snap.get("slo", {}).get(complexity(token_count), {}).get("maxP99Ms", 5000)
+    # SLO 结构兼容: Operator 快照是 {"high": 800} (int), 兼容 dict 形式 {"high": {"maxP99Ms": 800}}
+    slo_entry = snap.get("slo", {}).get(complexity(token_count), 5000)
+    slo_ms = slo_entry if isinstance(slo_entry, (int, float)) else (slo_entry or {}).get("maxP99Ms", 5000)
     predicted = status.get("predictedP99Ms", 0)
     overloaded = (not status.get("healthy", True)) or (predicted > slo_ms)
 
