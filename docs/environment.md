@@ -147,6 +147,8 @@ kubectl exec -it <pod> -- sh -c 'echo "FROM /tmp/model.gguf" > /tmp/Modelfile &&
 4. **kube-prometheus-stack**：webhook TLS secret 需手动补，且 secret 键名必须是 `cert`/`key`（不是 tls.crt/tls.key）。
 5. **GPU 资源死锁**：Error 状态 pod 会一直占着 nvidia.com/gpu 不放，导致新 pod 调度失败。出现"0/3 nodes available: Insufficient nvidia.com/gpu"时，先删 Error pod。
 6. **gpu-exporter/dcgm-exporter 的 nodeSelector 标签是 `node-role: gpu`，与当前 GPU 节点标签 `nvidia.com/gpu=true` 不一致** —— 部署前需统一。
+7. **单 GPU 滚动更新死锁**：`replicas=1` + 默认 RollingUpdate（`maxUnavailable` 取整 = 0）会**先建新 pod 再删旧的**，新 pod 等 GPU 时旧 pod 不释放 → 永远 Pending。解法：`vllm-3b` 已改 **Recreate** 策略（先删后建）；手动等价操作 = `kubectl delete pod` 强制重建（tuning_matrix.py 的 apply_config 就是这么做的）。
+8. **kubectl port-forward 就绪需要探测**：起 port-forward 后 `sleep 4s` 不够，首个请求会 connection refused。必须先轮询 `/v1/models` 通再发压测（tuning_matrix.py 已内置 30s 探测）。
 
 ---
 
@@ -220,3 +222,4 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
 | 版本 | 日期 | 内容 |
 |---|---|---|
 | v1.0 | 2026-08-04 | Phase 0 完成：集群+GPU+监控+双后端，全部配方与踩坑 |
+| v1.1 | 2026-08-06 | 补坑：单GPU滚动更新死锁(Recreate)、port-forward需探测；Phase 1 调参矩阵工具入库 |

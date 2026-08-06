@@ -429,10 +429,21 @@ GPU 利用率 95%、队列深、预测 P99 超 SLO
 | D5 | 保留 CPU 低阶 tier | 没有它调度器就无决策空间，"异构调度"不成立；成本近零 |
 | D6 | 成本模型改真实测量口径 | 个人环境无真实计价数据，不写死"60% 节省"这种穿帮数字 |
 | D7 | 保留现有 gateway 做数据面 | 复用 Phase A（SSE/鉴权/限流/熔断），Operator 只做控制面，避免重写 |
+| D8 | vLLM 7B-AWQ → 3B-AWQ | 8GB 上 LMCache 连接器需 ~1.3GB 显存，7B 塞不下；3B 权重~2GB，省下显存投给 KV/LMCache |
+| D9 | 砍 0.5B GPU 实例 | 复杂度启发式评估已够用，8GB 拥挤；少一个实例少一份碎片与调参面 |
+| D10 | LMCache 禁用 GDS + CPU 缓存限 1GB | WSL2 不支持 cufile（GDS）；8GB 内存上 4GB CPU 缓存会 OOM |
+| D11 | GPU 层 vLLM 更新策略改 Recreate | 单 GPU 独占资源，RollingUpdate（1副本时 maxUnavailable=0）先建新 pod 等 GPU 而旧 pod 不删 → 死锁；必须先删旧再建新 |
+| D12 | 用互异长前缀"撑爆 GPU KV"来验证 LMCache | GPU KV 仅 ~65K tokens；只有构造 80K 互异前缀触发逐出，才能证明 LMCache 的 CPU/SSD 恢复价值——否则只是 vLLM 缓存 |
+| D13 | 调参矩阵加 `max_local_cpu_size` 维度 | 3B 省下的显存 = GPU KV vs CPU 缓存的内存权衡；结果直接喂 Phase 2 cache-aware 决策 |
+| D14 | 前缀复用 benchmark 用"cold 撑满 → 反向 warm" | 反向序保证 prefix=0 已被后续前缀逐出，公平测"重新 prefill vs LMCache 恢复" |
 
 ---
 
 ## 十、面试话术与包装
+
+### 30 秒电梯话术（开场）
+
+> "在 8GB 单卡极限下，我设计了一个**缓存感知的异构推理调度平台**，拆成两个项目。服务面 HeteroServe：vLLM + LMCache 分层缓存，把 KV 从 GPU 卸载到 CPU/SSD，被逐出的前缀恢复时 TTFT 降 **3–5×**，命中率实测 27.6%。控制面+数据面 CyberRouter：K8s Operator 调度器，路由策略做成 CRD 可灰度，用排队模型**预判 P99**，GPU 排队前主动降级到 CPU tier——不是等失败再重试。缓存命中率回馈给调度器，形成 cache-aware 的在线闭环。"
 
 ### 15 分钟深聊话术（骨架）
 
@@ -447,6 +458,21 @@ GPU 利用率 95%、队列深、预测 P99 超 SLO
 ### 关键数字（口径）
 - TTFT 下降 / 命中率 / 调参矩阵 → 全部真实测量，待回填
 - 降级响应 < 5s、决策日志 100%、策略可配置 100% → 真实可演示
+
+### 面试追问防拆清单（吸收自旧版"赛博图书馆"，已更新为当前项目口径）
+
+| 追问 | 你要能答的关键点 |
+|------|----------------|
+| "LMCache 分层缓存怎么工作的？" | GPU hot / CPU warm / SSD cold 三层；块级前缀匹配（chunk_size=256）；被逐出前缀从 CPU/SSD 恢复 |
+| "8GB 显存怎么装下模型 + 缓存的？" | 3B-AWQ 权重 ~2GB + LMCache 连接器 ~1.3GB + 激活 ~0.4GB，余量给 GPU KV；这是砍 7B 换 3B 的原因（D8） |
+| "前缀复用 benchmark 怎么设计的？" | 20 个互异 4000-token 前缀（80K > GPU KV 65K）触发逐出；cold 撑满 → 反向 warm 测恢复；保证 prefix=0 已被逐出（D14） |
+| "LMCache 和 vLLM 自带 Prefix Caching 的区别？" | vLLM 管 GPU 热层；LMCache 管超容量卸载与恢复。增量价值只在"GPU KV 超容量"场景（诚实口径，D12） |
+| "命中率 27.6% 怎么来的？" | `prefix_cache_hits_total / prefix_cache_queries_total` 实测，两个指标 vLLM 原生暴露 |
+| "为什么不做副本弹性/HA？" | 单 GPU 副本扩容 = OOM，是表演（D3）；改引擎内 batch 深度伸缩 + CPU worker 水平扩展 |
+| "调度器怎么选 tier？" | 复杂度评估 → 候选过滤（质量/健康/预判 P99）→ cache-aware 加分 → Pareto 选择 |
+| "预判 P99 是什么？" | 不用拍脑袋打分，用排队模型（Little's law / M/G/1）：当前 P99 + 队列深度 × 每请求边际延迟 |
+| "WSL2 的 GPU 怎么通的？" | privileged + 挂 /dev/dxg + 驱动库**保留版本目录结构**挂载（扁平挂载 cuInit 报 no driver）+ `VLLM_WSL2_ENABLE_PIN_MEMORY=1` |
+| "项目迁移到云上改什么？" | node label + 镜像仓库 + ingress；调度器、网关、缓存逻辑完全不变 |
 
 ---
 
