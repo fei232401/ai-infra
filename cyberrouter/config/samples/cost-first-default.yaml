@@ -1,0 +1,35 @@
+# 示例 RoutingPolicy — 成本优先默认策略 (来自 BLUEPRINT §3.2)
+# 语义:
+#   - 短请求 + 缓存命中概率高 → CPU tier (ollama, 便宜)
+#   - 高复杂度 → GPU tier (vllm-3b)
+#   - 全部兜底: 目标 tier 失败时沿 fallbackChain 降级
+apiVersion: routing.cyberrouter.io/v1
+kind: RoutingPolicy
+metadata:
+  name: cost-first-default
+spec:
+  rollout:
+    percentage: 100
+  rules:
+    - id: rule-001
+      priority: 100
+      condition:
+        tokenCount: "< 100"
+        cacheHitProbability: "> 0.5"
+      action:
+        tier: ollama-service
+        fallbackChain: ["ollama-service", "vllm-3b-service"]
+    - id: rule-002
+      priority: 90
+      condition:
+        complexity: high
+      action:
+        tier: vllm-3b-service
+        fallbackChain: ["vllm-3b-service", "ollama-service"]
+  slo:
+    low:
+      maxP99Ms: 200
+    medium:
+      maxP99Ms: 1000
+    high:
+      maxP99Ms: 5000
