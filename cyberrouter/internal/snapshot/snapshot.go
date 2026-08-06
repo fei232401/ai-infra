@@ -35,8 +35,10 @@ type TierStatus struct {
 	GpuUsagePct float64 `json:"gpuUsagePct,omitempty"`
 	// CacheHitRatio LMCache/prefix 命中率 (0-1), cache-aware 联动点
 	CacheHitRatio float64 `json:"cacheHitRatio,omitempty"`
-	// QueueDepth 排队请求数, 预判 P99 输入
+	// QueueDepth 排队请求数 (WSL2/vLLM 下常为 0, 仅供参考)
 	QueueDepth int `json:"queueDepth,omitempty"`
+	// Running 当前执行中的并发请求数 (continuous batching 下的真实压力信号)
+	Running int `json:"running,omitempty"`
 	// PredictedP99Ms 预判 P99 (简化排队模型)
 	PredictedP99Ms float64 `json:"predictedP99Ms,omitempty"`
 	// MarginalMs 每请求边际延迟 (简化排队模型参数)

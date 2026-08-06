@@ -13,14 +13,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fei232401/cyberrouter/internal/decision"
 	"github.com/fei232401/cyberrouter/internal/snapshot"
 )
 
 // 需要解析的 vLLM 指标 (Prometheus text format: `name{labels} value`)
 var (
-	reGpuUsage  = regexp.MustCompile(`(?m)^vllm:gpu_cache_usage_perc\{[^}]*\} ([\d.]+)`)
-	reQueue     = regexp.MustCompile(`(?m)^vllm:num_requests_waiting\{[^}]*\} ([\d.]+)`)
+	reGpuUsage   = regexp.MustCompile(`(?m)^vllm:gpu_cache_usage_perc\{[^}]*\} ([\d.]+)`)
+	reQueue      = regexp.MustCompile(`(?m)^vllm:num_requests_waiting\{[^}]*\} ([\d.]+)`)
+	reRunning    = regexp.MustCompile(`(?m)^vllm:num_requests_running\{[^}]*\} ([\d.]+)`)
 	reHitQueries = regexp.MustCompile(`(?m)^vllm:prefix_cache_hits_total\{[^}]*\} ([\d.]+)`)
 	reAllQueries = regexp.MustCompile(`(?m)^vllm:prefix_cache_queries_total\{[^}]*\} ([\d.]+)`)
 )
@@ -76,6 +76,12 @@ func parseVLLMMetrics(text string) (*snapshot.TierStatus, error) {
 			st.QueueDepth = int(v)
 		}
 	}
+	// num_requests_running: continuous batching 下 waiting 常为 0, running 才是真实压力信号
+	if m := reRunning.FindStringSubmatch(text); m != nil {
+		if v, err := strconv.ParseFloat(m[1], 64); err == nil {
+			st.Running = int(v)
+		}
+	}
 	hits := parseFloatFirst(reHitQueries, text)
 	queries := parseFloatFirst(reAllQueries, text)
 	if queries > 0 {
@@ -95,15 +101,12 @@ func parseFloatFirst(re *regexp.Regexp, text string) float64 {
 
 // PredictP99 用简化排队模型预测 P99 (复用 decision 包的 TierHealth 逻辑)
 // 注意: Go 不允许在外部包类型上定义方法, 故为包级函数
+// 压力信号: running (并发数) 为主 — WSL2/vLLM 下 continuous batching 的 waiting 恒为 0
 func PredictP99(st *snapshot.TierStatus, marginalMs float64) {
 	st.MarginalMs = marginalMs
-	// 基础 P99: 经验值 300ms + 队列深度 × 每请求边际延迟
+	// 基础 P99: 经验值 300ms + 每个并发请求 × 边际延迟 (running=10 → +800ms)
 	baseMs := 300.0
-	st.PredictedP99Ms = decision.PredictP99(decision.TierHealth{
-		CurrentP99Ms: baseMs,
-		QueueDepth:   st.QueueDepth,
-		MarginalMs:   marginalMs,
-	})
+	st.PredictedP99Ms = baseMs + float64(st.Running)*marginalMs
 }
 
 // IsOverloaded 判断 GPU 是否高负载 (cache-aware / 预判降级用)
