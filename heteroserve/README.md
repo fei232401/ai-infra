@@ -25,6 +25,21 @@ CPU tier:  Ollama 1.5b / 3b（调度器第二目标，成本近零）
 
 集成点：vLLM 镜像内置 LMCache，接入 = `LMCACHE_CONFIG_FILE` + `--kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'`。
 
+## 与 CyberRouter 的联动（旗舰闭环）
+
+```
+LMCache 命中率 / GPU 水位 (vllm:prefix_cache_* / num_requests_running)
+   │  Operator 5s 采集 (internal/metrics)
+   ▼
+路由快照.tiers 动态状态 (命中率/预判P99)
+   │  gateway 决策时读取
+   ▼
+命中率高 → 便宜 tier 权重上调 (cache-aware, 规则条件)
+GPU 忙 (预判P99> SLO) → 主动降级 CPU tier (预判性降级)
+```
+
+**Phase 1 的缓存指标直接喂给了 Phase 2/3 的调度决策**——这是两个项目的唯一、最闪的联结点（BLUEPRINT §4.5）。
+
 ## Benchmark 小结
 
 ### 1. 前缀复用 benchmark（LMCache 价值证明）

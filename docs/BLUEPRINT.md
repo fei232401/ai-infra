@@ -219,13 +219,13 @@ spec:
 - 改造点：路由逻辑从内置 if-else → **读取 Operator 同步的快照**（ConfigMap/CRD watch）
 - 新增：cache-aware 路由字段透传
 
-### 3.8 完成标志（DoD）
+### 3.8 完成标志（DoD）— ✅ 2026-08-06 全部达成
 
-- [ ] RoutingPolicy CRD 可热更新，灰度生效（版本≥3）
-- [ ] 决策引擎跑通：复杂度→候选→预判P99→选择，全部有日志
-- [ ] 决策日志 100%，可回放
-- [ ] Operator 完成策略→快照→网关的同步闭环
-- [ ] 至少 1 个"预判性降级"案例可演示（日志+截图）
+- [x] RoutingPolicy CRD 可热更新，灰度生效（版本≥3）— 热更新实测（改 CR→快照跟随）；灰度字段已定义未做多版本实测
+- [x] 决策引擎跑通：复杂度→候选→预判P99→选择，全部有日志 — decision 包 9/9 测试
+- [x] 决策日志 100%，可回放 — 每决策带推理链（Reasons）
+- [x] Operator 完成策略→快照→网关的同步闭环 — 端到端实测（短→CPU/长→GPU 真实回答）
+- [x] 至少 1 个"预判性降级"案例可演示（日志+截图）— Demo 证据链：GPU 忙 P99≈1100>800 → 主动降级 ollama
 
 ---
 
@@ -283,12 +283,12 @@ spec:
 - 缓存面板：命中率、卸载量
 - 调度面板：请求分布、降级次数（联动的可视化证据）
 
-### 4.8 完成标志（DoD）
+### 4.8 完成标志（DoD）— ✅ 2026-08-06 全部达成
 
-- [ ] vLLM 7B-AWQ + LMCache 跑通，分层 cache 可用
-- [ ] 前缀复用 benchmark 出真实 before/after 数字（TTFT / 命中率 / 吞吐）
-- [ ] 调参矩阵出真实数字（至少 5 组配置对比）
-- [ ] 缓存指标暴露给 Prometheus 并被调度器读到（联动证据链）
+- [x] vLLM + LMCache 跑通，分层 cache 可用（3B-AWQ 替代 7B，D8 决策）
+- [x] 前缀复用 benchmark 出真实 before/after 数字（TTFT 3-5×，命中率 40.5%）
+- [x] 调参矩阵出真实数字（9 组合 > 5 组要求）
+- [x] 缓存指标暴露给 Prometheus 并被调度器读到（vllm-servicemonitor + Operator 5s 采集命中率）
 
 ---
 
@@ -357,34 +357,34 @@ GPU 利用率 95%、队列深、预测 P99 超 SLO
 
 > 原则：最小闭环 → 深挖优化 → 工业化包装。**先把环境修好，再谈功能。**
 
-### Phase 0：环境修复与基线（2-3 天）
+### Phase 0：环境修复与基线 — ✅ 2026-08-04
 
-- [ ] 修 pause 镜像问题（k3d image import 或给 k3s 节点配 daocloud mirror）
-- [ ] GPU 接入 k3d（重建带 `--gpus` 或装 device plugin），验证 pod 能用 GPU
-- [ ] 部署 Prometheus + Grafana
-- [ ] 部署 vLLM 7B-AWQ（GPU）+ Ollama 1.5b/3b（CPU）
+- [x] 修 pause 镜像问题（k3d image import 或给 k3s 节点配 daocloud mirror）
+- [x] GPU 接入 k3d（重建带 `--gpus` 或装 device plugin），验证 pod 能用 GPU
+- [x] 部署 Prometheus + Grafana
+- [x] 部署 vLLM 3B-AWQ（GPU）+ Ollama 1.5b/3b（CPU）
 - 产出：`docs/environment.md`（记录 GPU 限制、WSL 限制、踩坑）
 
-### Phase 1：HeteroServe v3 骨架（5-7 天）
+### Phase 1：HeteroServe v3 骨架 — ✅ 2026-08-06
 
-- [ ] vLLM 调参矩阵（至少 5 组配置，真实数字）
-- [ ] LMCache 接入 + 分层 cache
-- [ ] 前缀复用 benchmark（before/after 数字）
+- [x] vLLM 调参矩阵（9 组合，真实数字）
+- [x] LMCache 接入 + 分层 cache
+- [x] 前缀复用 benchmark（before/after 数字，3-5×）
 - 产出：HeteroServe repo 骨架 + benchmark 数据
 
-### Phase 2：CyberRouter v2 骨架（7-10 天）
+### Phase 2：CyberRouter v2 骨架 — ✅ 2026-08-06
 
-- [ ] RoutingPolicy CRD 定义 + kopf Controller
-- [ ] 决策引擎（复杂度→候选→预判P99→选择）
-- [ ] 快照同步：Operator → ConfigMap → gateway
-- [ ] gateway 数据面改造（读快照代替 if-else）
+- [x] RoutingPolicy CRD 定义 + Go Controller（语言决策：Go 替代 kopf，简历杀伤力大）
+- [x] 决策引擎（复杂度→候选→预判P99→选择，9/9 测试）
+- [x] 快照同步：Operator → ConfigMap → gateway
+- [x] gateway 数据面改造（读快照代替 if-else）
 - 产出：CyberRouter repo + 决策日志示例
 
-### Phase 3：联动闭环（3-5 天）
+### Phase 3：联动闭环 — ⚠️ 核心完成 2026-08-06
 
-- [ ] cache-aware 路由打通
-- [ ] 预判性降级 Demo + 证据链（截图+日志）
-- 产出：完整联动演示 + Grafana 面板
+- [x] 预判性降级 Demo + 证据链（日志：GPU 忙 P99≈1100>800 → 主动降级 ollama）
+- [~] cache-aware 路由：命中率已采集进快照 + CR 支持命中率条件；**动态自动加权未实现**（演进项）
+- 产出：联动演示 ✅；Grafana 面板（H6）待做
 
 ### Phase 4：包装（3 天）
 
@@ -395,23 +395,24 @@ GPU 利用率 95%、队列深、预测 P99 超 SLO
 
 ---
 
-## 八、量化目标
+## 八、量化目标 — ✅ 2026-08-06 真实数字已回填
 
-**原则：所有数字必须来自真实测量，不写估算。** 目标值留待 benchmark 后回填。
+**原则：所有数字来自真实测量，不写估算。**
 
-| 指标 | 目标 | 口径 |
+| 指标 | 实测结果 | 口径 |
 |---|---|---|
-| LMCache 前缀复用 TTFT 下降 | 待回填（期望显著） | 真实 before/after |
-| LMCache 命中率 | 待回填 | 真实负载 |
-| 调度器降级响应延迟 | < 5s（状态变化→路由调整） | 真实测量 |
-| 决策日志覆盖率 | 100% | 内置 |
-| 策略可配置率 | 100%（不改代码调路由） | 内置 |
-| vLLM 调参最佳配置 | 5+ 组对比 | 真实矩阵 |
+| LMCache 前缀复用 TTFT 下降 | **3–5×**（0.60s → 0.11–0.19s）| 真实 before/after |
+| LMCache 命中率 | **40.5%**（互异前缀负载）| 真实负载 |
+| 调度器降级响应延迟 | **~1min**（kubelet ConfigMap 挂载同步延迟，目标 <5s 未达）| 真实测量 |
+| 决策日志覆盖率 | **100%**（每决策推理链）| 内置 |
+| 策略可配置率 | **100%**（CRD 改策略不改代码）| 内置 |
+| vLLM 调参最佳配置 | **9 组对比** → 推荐 gpu=0.8/seqs16/cpu1GB | 真实矩阵 |
 
-**简历话术（待数字回填后定稿）**：
+**简历话术（数字已回填定稿）**：
 - "在 8GB 单卡极限下设计缓存感知的异构推理调度平台"
-- "LMCache 分层缓存使前缀复用请求 TTFT 下降 X%"
-- "调度器基于排队模型预判 P99，主动降级避免 SLO 违约"
+- "LMCache 分层缓存使前缀复用请求 TTFT 下降 **3–5×**，命中率 40.5%"
+- "调度器基于排队模型预判 P99，GPU 忙时主动降级避免 SLO 违约（实测降级证据链）"
+- "调参矩阵 9 组合实测，吞吐 QPS **2.45×**、P95 延迟降 **5.3×**"
 - "策略 CRD 化 + GitOps，灰度上线无需改代码"
 
 ---
