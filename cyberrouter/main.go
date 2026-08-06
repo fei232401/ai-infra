@@ -17,6 +17,7 @@ import (
 
 	routingv1 "github.com/fei232401/cyberrouter/api/v1"
 	"github.com/fei232401/cyberrouter/internal/controller"
+	"github.com/fei232401/cyberrouter/internal/metrics"
 )
 
 var (
@@ -51,9 +52,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Phase 3: 配置指标采集 (集群内 Service DNS 可达)
+	vllmMetricsURL := os.Getenv("VLLM_METRICS_URL")
+	var endpoints []controller.TierEndpoint
+	if vllmMetricsURL != "" {
+		endpoints = append(endpoints, controller.TierEndpoint{
+			Name:       "vllm-3b-service",
+			MetricsURL: vllmMetricsURL,
+			MarginalMs: 80, // 简化排队模型: 每请求边际延迟
+		})
+		setupLog.Info("指标采集已启用", "tier", "vllm-3b-service", "url", vllmMetricsURL)
+	}
+
 	if err := (&controller.RoutingPolicyReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Metrics:       metrics.NewClient(vllmMetricsURL),
+		TierEndpoints: endpoints,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "无法创建 controller", "controller", "RoutingPolicy")
 		os.Exit(1)
