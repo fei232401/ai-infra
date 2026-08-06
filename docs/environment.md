@@ -223,6 +223,29 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
 
 ---
 
+## 七、Phase 2 进度（CyberRouter v2 Operator）
+
+### ✅ 已完成（2026-08-06）
+
+1. **P2-1 Go Operator 骨架 + RoutingPolicy CRD 跑通**：
+   - **语言决策**：Go + controller-runtime（非 kopf）。正宗 Operator 就该 Go，简历杀伤力大。
+   - **Go 工具链**：`~/.local/go`（go 1.26 由 go.mod 自动下载），`GOPROXY=https://goproxy.cn`（proxy.golang.org 被墙）。controller-gen v0.16.5 在 `~/.local/go/bin`。
+   - **项目结构**：`project/cyberrouter/`（api/v1 CRD 类型 + internal/controller reconcile + main.go + config/）
+   - **验证**：CRD 部署 ✅ + `cost-first-default` 示例 CR ✅ + reconcile 闭环 ✅ + Status 回写（observedGeneration/snapshotHash）✅
+
+### ⏳ 剩余（P2）
+
+- **P2-2 快照同步**：Controller 把策略编译成快照 → 写 ConfigMap → gateway watch 消费
+- **P2-3 决策引擎**：复杂度→候选过滤→预判 P99→Pareto 选择，决策日志
+- **P2-4 gateway 数据面改造**：读快照代替 if-else
+
+### 踩坑（Go 工具链）
+
+1. **controller-gen v0.16.5 在 go1.26 下 crd 生成器输出空**（group/kind 全空），且 object 生成器只生成 root 类型 deepcopy → **CRD yaml 手写 + deepcopy 手写补齐**（见 cyberrouter/api/v1/zz_generated.deepcopy.go 注释）
+2. **go.mod go 1.26 自动触发 toolchain 下载**（GOTOOLCHAIN=auto 默认），可能和系统 Go 版本不一致——用 `go version` 确认实际版本
+
+---
+
 ## 修订记录
 
 | 版本 | 日期 | 内容 |
@@ -230,3 +253,4 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
 | v1.0 | 2026-08-04 | Phase 0 完成：集群+GPU+监控+双后端，全部配方与踩坑 |
 | v1.1 | 2026-08-06 | 补坑：单GPU滚动更新死锁(Recreate)、port-forward需探测；Phase 1 调参矩阵工具入库 |
 | v1.2 | 2026-08-06 | **Phase 1 完成**：H2 调参矩阵入档（推荐 0.8/16/1GB，QPS 2.45×，P95 降 5.3×）+ vllm-3b 落推荐配置（KV 65K→123K） |
+| v1.3 | 2026-08-06 | **Phase 2 启动**：P2-1 Go Operator 骨架 + RoutingPolicy CRD 跑通（语言决策 Go、工具链、踩坑） |
