@@ -233,11 +233,25 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
    - **项目结构**：`project/cyberrouter/`（api/v1 CRD 类型 + internal/controller reconcile + main.go + config/）
    - **验证**：CRD 部署 ✅ + `cost-first-default` 示例 CR ✅ + reconcile 闭环 ✅ + Status 回写（observedGeneration/snapshotHash）✅
 
-### ⏳ 剩余（P2）
+2. **P2-2 快照同步**（ab63854）：`internal/snapshot` 编译快照（CR → 数据面 JSON，规则按优先级降序）+ sha256 hash。Controller reconcile 幂等写 `cyberrouter-routing-snapshot` ConfigMap（存在则更新，删除策略时清理）。验证：ConfigMap 生成 + Status 真实 hash `1b07f181...`。
+3. **P2-3 决策引擎**（5ece079）：`internal/decision` 纯逻辑包，**9/9 单元测试通过**。
+   - 复杂度评估（token → low/med/high）、规则匹配（条件表达式解析）、SelectTier（返回可解释推理链 Reasons）
+   - `PredictP99` 简化排队模型（当前 P99 + 队列深度×边际延迟）、`FilterCandidates` 候选过滤（剔除不健康/超 SLO，输出拒绝理由）
+   - 动态状态（健康度/P99/队列）由 Operator 从 Prometheus 采集填充（Phase 3 接真实数据）
+4. **P2-4 gateway 数据面改造**（641c057）：gateway v11.1。
+   - `snapshot_loader.py`：ConfigMap 挂载快照加载 + 10s 后台刷新
+   - `router.py`：决策路由（Python，与 Go decision 语义一致）
+   - `gateway_server.py`：`route_request` 快照优先，fallback 到原 get_backend；决策日志
+   - 部署：gateway v12 镜像 + deployment 挂载快照 ConfigMap
+5. **端到端闭环验证**（2026-08-06）：
+   - 场景1 [短+高命中] → **ollama-service 真实回答**（决策: rule-001 tokenCount<100 AND cache>0.5）
+   - 场景2 [3300 tokens] → **vllm-3b-service 决策正确**（rule-002 complexity=high）
+   - **完整链路**：Operator 编译快照 → ConfigMap → gateway 挂载 → 请求决策路由 → 转发后端 ✅
 
-- **P2-2 快照同步**：Controller 把策略编译成快照 → 写 ConfigMap → gateway watch 消费
-- **P2-3 决策引擎**：复杂度→候选过滤→预判 P99→Pareto 选择，决策日志
-- **P2-4 gateway 数据面改造**：读快照代替 if-else
+### ⏳ 遗留（Phase 3 联动时修）
+
+- **model 名映射 gap**：路由到 tier 后，请求 body 的 model 名未映射为 tier 支持的模型（`qwen2.5:3b` → vLLM 需 `/models/qwen2.5-3b-awq`）→ 决策正确但 vLLM 报 model 不存在。修法：config tier 加 default_model，route_request 改写 body。
+- **预判性降级端到端**：FilterCandidates 逻辑就绪，接真实 Prometheus 指标后才能在 GPU 排队时演示主动降级（Phase 3 cache-aware 联动）。
 
 ### 踩坑（Go 工具链）
 
@@ -254,3 +268,4 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
 | v1.1 | 2026-08-06 | 补坑：单GPU滚动更新死锁(Recreate)、port-forward需探测；Phase 1 调参矩阵工具入库 |
 | v1.2 | 2026-08-06 | **Phase 1 完成**：H2 调参矩阵入档（推荐 0.8/16/1GB，QPS 2.45×，P95 降 5.3×）+ vllm-3b 落推荐配置（KV 65K→123K） |
 | v1.3 | 2026-08-06 | **Phase 2 启动**：P2-1 Go Operator 骨架 + RoutingPolicy CRD 跑通（语言决策 Go、工具链、踩坑） |
+| v1.4 | 2026-08-06 | **Phase 2 核心完成**：P2-1→P2-4 + 端到端闭环验证（Operator→ConfigMap→gateway→决策路由）。遗留：model 名映射 gap、预判降级端到端（Phase 3） |
