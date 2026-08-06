@@ -55,7 +55,7 @@ spec:
       serviceAccountName: cyberrouter-controller
       containers:
         - name: manager
-          image: cyberrouter-operator:v2
+          image: cyberrouter-operator:v3
           imagePullPolicy: Never
           env:
             # Phase 3: 集群内 Service DNS 采集 vLLM 指标 (GPU 水位/命中率/队列)

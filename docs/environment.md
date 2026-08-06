@@ -262,6 +262,27 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
 
 ---
 
+## 八、Phase 3 进度（联动闭环）
+
+### ✅ 已完成（2026-08-06）
+
+1. **P3-1 Operator 指标采集 + 快照动态状态**：
+   - `internal/metrics`：从 vLLM /metrics 采集（GPU 水位 / LMCache 命中率 / **num_requests_running**），简化排队模型 `PredictP99`（300ms + running×边际）
+   - `Snapshot.Tiers` 动态状态：Operator 用 `RequeueAfter 5s` 定期刷新（M4 集群状态感知）
+   - **Operator in-cluster 部署**：SA + RBAC + Deployment + `VLLM_METRICS_URL` env（集群内 Service DNS 采集）
+2. **P3-2 预判性降级 + 动态决策**：gateway 决策读 tiers 动态状态——tier 不健康或预判 P99 超 SLO → 沿 fallbackChain 降级。修复：SLO 结构兼容（int vs dict）、waiting 恒 0 改用 running。
+3. **P3-3 预判性降级 Demo（真实负载触发，证据链完整）**：
+   - 40 并发长请求压 GPU → vllm `running=10` → Operator 采集 `P99≈1100ms`
+   - gateway 决策日志：`命中 rule-002 (complexity=high); ⚠️ 预判降级: vllm-3b-service (预判P99≈1100ms > SLO 800ms); → 降级到 ollama-service`
+   - **证明**：rule-002 本该去 vllm，但 GPU 忙时主动降级到 CPU tier（不等失败重试）
+
+### 踩坑（Phase 3）
+
+1. **vLLM WSL2 下 `num_requests_waiting` 恒为 0**（continuous batching 内部消化）→ 用 `num_requests_running`（并发执行数）作压力信号
+2. **kubelet ConfigMap 挂载同步有延迟（~1min）**：Operator 5s 更新 ConfigMap，gateway 的挂载文件感知滞后 → 动态状态更新约 1 分钟后生效（Demo 需等同步窗口）
+
+---
+
 ## 修订记录
 
 | 版本 | 日期 | 内容 |
@@ -272,3 +293,4 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
 | v1.3 | 2026-08-06 | **Phase 2 启动**：P2-1 Go Operator 骨架 + RoutingPolicy CRD 跑通（语言决策 Go、工具链、踩坑） |
 | v1.4 | 2026-08-06 | **Phase 2 核心完成**：P2-1→P2-4 + 端到端闭环验证（Operator→ConfigMap→gateway→决策路由）。遗留：model 名映射 gap、预判降级端到端（Phase 3） |
 | v1.5 | 2026-08-06 | **Phase 2 完整收尾**：CRD 热更新实测 + model 映射修复（v14，vllm 真实回答）+ snapshot 刷新 hash 修复 + ollama chat/stream 端到端。遗留：ollama generate messages 兼容、预判降级（Phase 3） |
+| v1.6 | 2026-08-06 | **Phase 3 完成**：联动闭环。Operator 指标采集→快照动态状态→预判性降级 Demo（GPU 忙 P99≈1100>800 → 主动降级 ollama，证据链完整）。踩坑：waiting 恒 0 用 running、kubelet 挂载延迟 |
