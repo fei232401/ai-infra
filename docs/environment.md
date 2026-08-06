@@ -243,15 +243,17 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
    - `router.py`：决策路由（Python，与 Go decision 语义一致）
    - `gateway_server.py`：`route_request` 快照优先，fallback 到原 get_backend；决策日志
    - 部署：gateway v12 镜像 + deployment 挂载快照 ConfigMap
-5. **端到端闭环验证**（2026-08-06）：
-   - 场景1 [短+高命中] → **ollama-service 真实回答**（决策: rule-001 tokenCount<100 AND cache>0.5）
-   - 场景2 [3300 tokens] → **vllm-3b-service 决策正确**（rule-002 complexity=high）
-   - **完整链路**：Operator 编译快照 → ConfigMap → gateway 挂载 → 请求决策路由 → 转发后端 ✅
+5. **端到端闭环验证**（2026-08-06，**全部真实回答**）：
+   - **CRD 热更新实测** ✅：改 CR（tokenCount <100→<200）→ Operator reconcile（gen 1→2）→ 快照 hash 更新 `1b07f181`→`897092e7` → gateway 10s 内加载新规则
+   - **场景1** [短+高命中] → **ollama-service 真实回答**（`/api/chat/stream`，rule-001）
+   - **场景2** [2310 tokens] → **vllm-3b-service 真实回答**（`/api/generate`，rule-002 high，model 映射为 `/models/qwen2.5-3b-awq`）
+   - **完整链路**：Operator 编译快照 → ConfigMap → gateway 挂载 → 决策路由 → model 映射 → 后端真实推理 ✅
+   - **修的两个 bug**：① snapshot_loader 用 mtime 判断刷新不生效（K8s ConfigMap 挂载是 symlink 原子替换）→ 改内容 hash 比较；② vllm 分支用局部变量 model 而非映射后的 body.model → 转发 404 → 改 `body.get("model")`
 
-### ⏳ 遗留（Phase 3 联动时修）
+### ⏳ 遗留（低优先级 / Phase 3）
 
-- **model 名映射 gap**：路由到 tier 后，请求 body 的 model 名未映射为 tier 支持的模型（`qwen2.5:3b` → vLLM 需 `/models/qwen2.5-3b-awq`）→ 决策正确但 vLLM 报 model 不存在。修法：config tier 加 default_model，route_request 改写 body。
-- **预判性降级端到端**：FilterCandidates 逻辑就绪，接真实 Prometheus 指标后才能在 GPU 排队时演示主动降级（Phase 3 cache-aware 联动）。
+- **ollama `/api/generate` messages 兼容**（Phase A 遗留）：generate 端点 ollama 分支把含 messages 的 body 转发 ollama `/api/generate`（要 prompt）→ response 空。`/api/chat/stream`（走 `/api/chat` 支持 messages）完整工作。修法：ollama 分支 messages→prompt。
+- **预判性降级端到端**：FilterCandidates 逻辑就绪，接真实 Prometheus 指标后演示主动降级（Phase 3 cache-aware 联动）。
 
 ### 踩坑（Go 工具链）
 
@@ -269,3 +271,4 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
 | v1.2 | 2026-08-06 | **Phase 1 完成**：H2 调参矩阵入档（推荐 0.8/16/1GB，QPS 2.45×，P95 降 5.3×）+ vllm-3b 落推荐配置（KV 65K→123K） |
 | v1.3 | 2026-08-06 | **Phase 2 启动**：P2-1 Go Operator 骨架 + RoutingPolicy CRD 跑通（语言决策 Go、工具链、踩坑） |
 | v1.4 | 2026-08-06 | **Phase 2 核心完成**：P2-1→P2-4 + 端到端闭环验证（Operator→ConfigMap→gateway→决策路由）。遗留：model 名映射 gap、预判降级端到端（Phase 3） |
+| v1.5 | 2026-08-06 | **Phase 2 完整收尾**：CRD 热更新实测 + model 映射修复（v14，vllm 真实回答）+ snapshot 刷新 hash 修复 + ollama chat/stream 端到端。遗留：ollama generate messages 兼容、预判降级（Phase 3） |
