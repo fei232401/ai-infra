@@ -12,7 +12,7 @@ HeteroServe 前缀复用 benchmark — 量化 LMCache 分层缓存的 KV 缓存�
       --num-prefixes 10 --prefix-tokens 3000 \
       --queries-per-prefix 2
 """
-import argparse, json, time, uuid
+import argparse, json, time, uuid, os
 import urllib.request
 
 import random, hashlib
@@ -106,8 +106,10 @@ def main():
         print(f"  cold TTFT 均值: {avg_cold:.3f}s  ({len(cold)} 次)")
         print(f"  warm TTFT 均值: {avg_warm:.3f}s  ({len(warm)} 次)")
         print(f"  缓存提速: {(1 - avg_warm/avg_cold)*100:.1f}%")
-    # 存结果
-    out = f"benchmark_results_{uuid.uuid4().hex[:8]}.json"
+    # 存结果 — 固定写到 results/ 子目录 (勿用相对路径, 会写到 cwd 导致 orchestrator 找不到)
+    out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, f"benchmark_results_{uuid.uuid4().hex[:8]}.json")
     with open(out, "w") as f:
         json.dump(results, f, indent=2)
     print(f"  结果已存: {out}")

@@ -18,6 +18,8 @@ import argparse, asyncio, json, time, random, hashlib
 import aiohttp
 from benchmark import make_prefix
 
+_last_err = {"msg": None}
+
 async def query_ttft(session, url, model, prompt, max_tokens, sem):
     """发送单个流式请求, 返回 (ttft_s, total_s) 或 None(失败)"""
     payload = {
@@ -32,6 +34,7 @@ async def query_ttft(session, url, model, prompt, max_tokens, sem):
         try:
             async with session.post(f"{url}/chat/completions", json=payload, timeout=aiohttp.ClientTimeout(total=180)) as resp:
                 if resp.status != 200:
+                    _last_err["msg"] = f"HTTP {resp.status}: {(await resp.text())[:200]}"
                     return None
                 async for line in resp.content:
                     line = line.decode().strip()
@@ -40,7 +43,8 @@ async def query_ttft(session, url, model, prompt, max_tokens, sem):
                             ttft = time.time() - t0
                 total = time.time() - t0
             return (ttft, total)
-        except Exception:
+        except Exception as e:
+            _last_err["msg"] = str(e)
             return None
 
 async def run(url, model, concurrency, requests, prefix_tokens, max_tokens):

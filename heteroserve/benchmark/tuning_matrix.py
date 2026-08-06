@@ -31,8 +31,12 @@ MATRIX = [
     ("B1", "0.8", "4",  "1.0", "load"),
     ("B2", "0.8", "16", "1.0", "load"),
     ("B3", "0.8", "32", "1.0", "load"),
-    ("C2", "0.8", "8",  "2.0", "prefix"),
-    ("C3", "0.8", "8",  "4.0", "prefix"),
+    # C 系列: 固定 gpu=0.55 (KV=65K, 保证 80K 前缀触发逐出), 只变 cpu_cache 大小
+    # (gpu=0.8 时 KV 变大装得下 80K, 逐出不触发, 测不到 LMCache 恢复)
+    ("C1", "0.55", "8", "1.0", "prefix"),
+    ("C2", "0.55", "8", "2.0", "prefix"),
+    ("C3", "0.55", "8", "4.0", "prefix"),
+    ("P1", "0.8", "16", "2.0", "load"),    # 生产推荐组合态验证 (A2+B2+C2 最优值组合)
 ]
 BASE = ("0.55", "4", "1.0")  # 恢复用
 
@@ -101,17 +105,18 @@ def run_load_test(concurrency=8, requests=40, prefix_tokens=1000, max_tokens=32)
 
 def run_prefix_recovery():
     """跑前缀恢复专项 (撑爆 GPU KV → 反向 warm), 返回 {evicted_warm_ttfts, ...}"""
+    # 记录跑前已有文件集合, 跑后只认"新增"的文件 — 避免读旧文件
+    before = set(glob.glob(os.path.join(HERE, "results", "benchmark_results_*.json")))
     r = subprocess.run([sys.executable, os.path.join(HERE, "benchmark.py"),
                         "--url", "http://localhost:8000/v1", "--model", MODEL,
                         "--num-prefixes", "20", "--prefix-tokens", "4000",
                         "--queries-per-prefix", "2"], capture_output=True, text=True)
     if r.returncode != 0:
         return {"error": r.stderr.strip()[-500:]}
-    # 解析最新生成的 benchmark 结果: 找 warm 中"被逐出"的那批 (恢复 TTFT 明显高于未逐出的 0.04s)
-    files = sorted(glob.glob(os.path.join(HERE, "results", "benchmark_results_*.json")), key=os.path.getmtime)
+    files = [f for f in glob.glob(os.path.join(HERE, "results", "benchmark_results_*.json")) if f not in before]
     if not files:
-        return {"error": "无 benchmark 结果文件"}
-    with open(files[-1]) as f:
+        return {"error": "benchmark.py 未生成新结果文件"}
+    with open(sorted(files, key=os.path.getmtime)[-1]) as f:
         runs = json.load(f)
     warm = [r for r in runs if r["tag"] == "warm"]
     evicted = sorted(r["ttft_s"] for r in warm if r["ttft_s"] > 0.1)   # 恢复档 (vs GPU 命中 0.04s)
@@ -160,6 +165,9 @@ def apply_config(gpu_util, seqs, cpu_gb):
 def collect_matrix(existing=None):
     data = existing if existing else {}
     for name, gpu, seqs, cpu, kind in MATRIX:
+        if data.get(name, {}).get("status") == "OK":
+            print(f"\n[组合 {name}] 已存在 status=OK, 跳过", flush=True)
+            continue
         print(f"\n{'='*60}\n[组合 {name}] gpu={gpu} seqs={seqs} cpu_cache={cpu}GB kind={kind}", flush=True)
         try:
             ok, pod = apply_config(gpu, seqs, cpu)
@@ -170,10 +178,20 @@ def collect_matrix(existing=None):
             print(f"  ✅ pod 就绪: {pod}", flush=True)
             time.sleep(5)  # 等指标预热
 
-            # port-forward
+            # port-forward + 等它真正可服务 (4s 不够, 必须探测 /v1/models)
             pf = subprocess.Popen(["kubectl", "port-forward", "-n", NS,
                                    f"svc/vllm-3b-service", "8000:8000"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(4)
+            import urllib.request
+            pf_ready = False
+            for _ in range(30):
+                try:
+                    urllib.request.urlopen("http://localhost:8000/v1/models", timeout=2)
+                    pf_ready = True
+                    break
+                except Exception:
+                    time.sleep(1)
+            if not pf_ready:
+                raise RuntimeError("port-forward 60s 内未就绪")
             try:
                 if kind == "load":
                     result = run_load_test()

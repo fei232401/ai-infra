@@ -2,8 +2,11 @@
 # vLLM-3B — GPU 主力推理服务 (替换原 7B, 给 LMCache 腾显存)
 # WSL2 GPU 配方 + LMCache 分层缓存
 #
-# 显存规划 (8GB): 权重 2.1 + LMCache 1.3 + 激活 0.4 = 3.8GB, 余量给 KV
-# 与 vllm-0.5b 共用 GPU (gpu_memory_utilization 各自预算)
+# 参数来自调参矩阵实测 (heteroserve/benchmark/results/matrix_results.json):
+#   gpu_memory_utilization 0.8 = 最优 (0.9 会 OOM, LMCache 连接器被挤爆)
+#   max_num_seqs 16 = 峰值吞吐 (4 是瓶颈, 32 饱和回落)
+#   max_local_cpu_size 1GB = 当前负载已够 (2GB 无额外收益, 4GB OOM)
+# 相对旧配置 (0.55/4): QPS 2.45x, TTFT P95 降 5.3x
 # ============================================================
 
 apiVersion: v1
@@ -52,12 +55,12 @@ spec:
             - --model
             - /models/qwen2.5-3b-awq
             - --gpu-memory-utilization
-            - "0.55"
+            - "0.8"
             - --max-model-len
             - "5000"
             - --enforce-eager
             - --max-num-seqs
-            - "4"
+            - "16"
             - --kv-transfer-config
             - '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both","kv_buffer_size":100000000}'
           env:
