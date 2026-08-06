@@ -2,6 +2,8 @@
 """AI Infra Gateway v11.0 — 双后端路由: CPU Ollama + GPU vLLM (chat completions fix)"""
 import asyncio, time, json, logging, os
 from typing import Optional
+from snapshot_loader import SnapshotLoader
+from router import decide, estimate_tokens
 from contextlib import asynccontextmanager
 from collections import defaultdict
 import yaml, aiohttp, jwt as pyjwt
@@ -23,11 +25,30 @@ def load_config(path=None):
 
 config = load_config()
 
+# CyberRouter 数据面: tier 映射 (快照里的 tier 名 → 实际后端) + 快照加载器
+tiers = config.get("tiers", {})
+snapshot_loader = SnapshotLoader()
+
 def get_backend(model_name: str) -> tuple:
     for _bid, bconf in config.get("backends", {}).items():
         if model_name in bconf.get("models", []):
             return bconf["base_url"], bconf["type"]
     return config["ollama"]["base_url"], "ollama"
+
+def route_request(body: dict, model: str) -> tuple:
+    """快照优先路由决策; 无快照/无 tier 映射时 fallback 到按 model 的静态映射"""
+    cache_hit_prob = float(body.get("cache_hit_probability", 0.0))
+    token_count = estimate_tokens(body)
+    action, rule_id, reasons = decide(snapshot_loader.get(), token_count, cache_hit_prob)
+    if action:
+        tier = action.get("tier")
+        tconf = tiers.get(tier)
+        if tconf:
+            logger.info(f"路由决策 → {tier} (rule={rule_id}) | 推理: {'; '.join(reasons)}")
+            return tconf["base_url"], tconf["type"], {"tier": tier, "rule_id": rule_id, "reasons": reasons}
+    base_url, backend_type = get_backend(model)
+    logger.info(f"路由 fallback → model={model} | 推理: {'; '.join(reasons)}")
+    return base_url, backend_type, {"tier": model, "reasons": reasons}
 
 # ---------- helper: 统一构造 chat messages ----------
 def _to_messages(body: dict) -> list:
@@ -118,9 +139,11 @@ async def get_session() -> aiohttp.ClientSession:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("=" * 50)
-    logger.info("AI Infra Gateway v11.0")
+    logger.info("AI Infra Gateway v11.1 (CyberRouter 数据面)")
     logger.info(f"Backends: {list(config.get('backends', {}).keys())}")
+    logger.info(f"Tiers: {list(tiers.keys())}")
     logger.info("=" * 50)
+    snapshot_loader.start()
     yield
     if session and not session.closed:
         await session.close()
@@ -201,7 +224,7 @@ async def generate(request: Request):
         raise HTTPException(status_code=429, detail="Rate limited")
     body = await request.json()
     model = body.get("model", config["ollama"]["default_model"])
-    base_url, backend_type = get_backend(model)
+    base_url, backend_type, _decision = route_request(body, model)
     body["stream"] = False
     sess = await get_session()
     logger.info(f"Generate: model={model}, backend={backend_type}")
@@ -245,7 +268,7 @@ async def chat_stream(request: Request):
         raise HTTPException(status_code=429, detail="Rate limited")
     body = await request.json()
     model = body.get("model", config["ollama"]["default_model"])
-    base_url, backend_type = get_backend(model)
+    base_url, backend_type, _decision = route_request(body, model)
     is_chat = "messages" in body
     body["stream"] = True
     logger.info(f"Stream: model={model}, backend={backend_type}, is_chat={is_chat}")

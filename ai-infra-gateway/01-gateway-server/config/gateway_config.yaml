@@ -40,8 +40,17 @@ backends:
       - "qwen2.5:3b"
       - "qwen2.5"
   gpu_vllm:
-    base_url: "http://vllm-service:8000"
+    base_url: "http://vllm-3b-service:8000"
     type: "vllm_openai"
     models:
-      - "qwen2.5-7b-awq"
-      - "qwen2.5:7b"
+      - "qwen2.5-3b-awq"
+      - "qwen2.5:3b"
+
+# CyberRouter 数据面: 快照 tier 名 → 实际后端 (快照优先路由, 见 route_request)
+tiers:
+  ollama-service:
+    base_url: "http://ollama-service:11434"
+    type: "ollama"
+  vllm-3b-service:
+    base_url: "http://vllm-3b-service:8000"
+    type: "vllm_openai"

@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: gateway
-          image: ai-infra-gateway:v11
+          image: ai-infra-gateway:v12
           imagePullPolicy: Never
           ports:
             - containerPort: 8000
@@ -29,6 +29,9 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /app/config
+              readOnly: true
+            - name: routing-snapshot
+              mountPath: /etc/cyberrouter
               readOnly: true
           readinessProbe:
             httpGet:
@@ -53,6 +56,9 @@ spec:
         - name: config
           configMap:
             name: gateway-config
+        - name: routing-snapshot
+          configMap:
+            name: cyberrouter-routing-snapshot
 ---
 apiVersion: v1
 kind: Service
