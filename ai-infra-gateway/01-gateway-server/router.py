@@ -53,9 +53,10 @@ def _compare(v, expr: str) -> bool:
 
 
 def decide(snap: Optional[dict], token_count: int, cache_hit_prob: float) -> Tuple[Optional[dict], Optional[str], List[str]]:
-    """按快照规则顺序匹配 (已按 priority 降序), 返回 (action, rule_id, reasons)
+    """决策: 规则匹配 (静态) → 动态状态检查 + 预判性降级 (Phase 3)
 
-    action: {"tier": "vllm-3b-service", "fallbackChain": [...]} 或 None
+    返回 (action, rule_id, reasons)
+    action: {"tier": "...", "fallbackChain": [...]} 或 None (走默认路由)
     """
     if not snap:
         return None, None, ["快照未就绪 (Operator 未同步?)"]
@@ -81,7 +82,53 @@ def decide(snap: Optional[dict], token_count: int, cache_hit_prob: float) -> Tup
                 matched = False
         if matched:
             reasons.append(f"命中规则 {rule.get('id')} (priority {rule.get('priority')}): {' AND '.join(why)}")
-            return rule.get("action"), rule.get("id"), reasons
+            action = rule.get("action")
+            # Phase 3: 动态状态检查 + 预判性降级 (GPU 忙/不健康 → 沿 fallback 降级)
+            _apply_dynamic_decision(snap, action, token_count, reasons)
+            return action, rule.get("id"), reasons
         reasons.append(f"规则 {rule.get('id')} 未命中")
     reasons.append("无规则命中 → 走默认路由")
     return None, None, reasons
+
+
+def _tier_status(snap: dict, tier_name: str) -> Optional[dict]:
+    """查快照 tiers 动态状态中某 tier 的状态 (Phase 3)"""
+    for t in snap.get("tiers", []):
+        if t.get("name") == tier_name:
+            return t
+    return None
+
+
+def _apply_dynamic_decision(snap: dict, action: dict, token_count: int, reasons: List[str]) -> None:
+    """预判性降级: 选中 tier 不健康 或 预判P99超SLO → 沿 fallbackChain 降级
+    无动态状态 (旧快照/未采集) 时维持静态决策 (向后兼容)
+    """
+    tier = action.get("tier")
+    status = _tier_status(snap, tier)
+    if status is None:
+        return  # 快照无动态状态 → 静态决策
+    slo_ms = snap.get("slo", {}).get(complexity(token_count), {}).get("maxP99Ms", 5000)
+    predicted = status.get("predictedP99Ms", 0)
+    overloaded = (not status.get("healthy", True)) or (predicted > slo_ms)
+
+    if not overloaded:
+        reasons.append(f"tier 状态 OK: {tier} P99≈{predicted:.0f}ms ≤ SLO {slo_ms}ms")
+        return
+
+    reasons.append(
+        f"⚠️ 预判降级: {tier} (healthy={status.get('healthy')}, 预判P99≈{predicted:.0f}ms > SLO {slo_ms}ms)"
+    )
+    for fb in action.get("fallbackChain", []):
+        if fb == tier:
+            continue
+        fb_status = _tier_status(snap, fb)
+        if fb_status is None:
+            # 无动态状态 (未被 Operator 监控) → 视为可用 (乐观: 无证据不健康)
+            reasons.append(f"  → 降级到 {fb} (无动态状态, 视为可用)")
+            action["tier"] = fb
+            return
+        if fb_status.get("healthy", True) and fb_status.get("predictedP99Ms", 0) <= slo_ms:
+            reasons.append(f"  → 降级到 {fb} (预判P99≈{fb_status.get('predictedP99Ms', 0):.0f}ms ≤ SLO)")
+            action["tier"] = fb
+            return
+    reasons.append("  → fallback 均不可用, 保持原 tier")
