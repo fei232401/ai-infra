@@ -236,7 +236,7 @@ async def generate(request: Request):
     if backend_type == "vllm_openai":
         # 统一走 /v1/chat/completions，用 _to_messages 兼容 prompt 和 messages 两种格式
         vllm_body = {
-            "model": model,
+            "model": body.get("model", model),
             "messages": _to_messages(body),
             "max_tokens": body.get("max_tokens", 100),
             "stream": False,
@@ -280,7 +280,7 @@ async def chat_stream(request: Request):
     if backend_type == "vllm_openai":
         # 统一走 /v1/chat/completions
         vllm_body = {
-            "model": model,
+            "model": body.get("model", model),
             "messages": _to_messages(body),
             "stream": True,
         }
