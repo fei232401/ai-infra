@@ -31,6 +31,10 @@ metadata:
     app: vllm-3b
 spec:
   replicas: 1
+  # 单 GPU 独占资源: RollingUpdate 的 maxUnavailable(1副本时=0) 会先建新pod占不到GPU而死锁
+  # 必须 Recreate: 先删旧pod释放 GPU, 再按新 spec 重建
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: vllm-3b
