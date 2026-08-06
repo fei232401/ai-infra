@@ -32,7 +32,6 @@ class SnapshotLoader:
         self.refresh_interval = refresh_interval
         self._snapshot = None
         self._hash = None
-        self._mtime = None
         self._lock = threading.Lock()
         self._stop = threading.Event()
 
@@ -50,16 +49,15 @@ class SnapshotLoader:
 
     def _reload(self) -> None:
         try:
-            mtime = __import__("os").path.getmtime(self.path)
-            if mtime == self._mtime:  # 文件未变, 跳过
-                return
             with open(self.path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             data_hash = hashlib.sha256(
                 json.dumps(data, sort_keys=True).encode()
             ).hexdigest()[:16]
             with self._lock:
-                self._snapshot, self._hash, self._mtime = data, data_hash, mtime
+                if self._hash == data_hash:
+                    return  # 内容未变 (K8s ConfigMap 挂载用 symlink 原子替换, mtime 不可靠)
+                self._snapshot, self._hash = data, data_hash
             logger.info(
                 "快照已刷新 policy=%s rules=%d hash=%s",
                 data.get("policyName"), len(data.get("rules", [])), data_hash,

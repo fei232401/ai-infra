@@ -44,7 +44,11 @@ def route_request(body: dict, model: str) -> tuple:
         tier = action.get("tier")
         tconf = tiers.get(tier)
         if tconf:
-            logger.info(f"路由决策 → {tier} (rule={rule_id}) | 推理: {'; '.join(reasons)}")
+            # model 名映射: 用户请求的 model → 该 tier 支持的 model (vLLM 需 /models/...)
+            mapped = tconf.get("default_model")
+            if mapped:
+                body["model"] = mapped
+            logger.info(f"路由决策 → {tier} (rule={rule_id}, model→{body['model']}) | 推理: {'; '.join(reasons)}")
             return tconf["base_url"], tconf["type"], {"tier": tier, "rule_id": rule_id, "reasons": reasons}
     base_url, backend_type = get_backend(model)
     logger.info(f"路由 fallback → model={model} | 推理: {'; '.join(reasons)}")

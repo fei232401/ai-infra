@@ -56,10 +56,13 @@ data:
           - "qwen2.5:3b"
 
     # CyberRouter 数据面: 快照 tier 名 → 实际后端 (快照优先路由)
+    # default_model: 路由到此 tier 时, 请求 model 名映射为该后端支持的模型
     tiers:
       ollama-service:
         base_url: "http://ollama-service.ai-platform.svc.cluster.local:11434"
         type: "ollama"
+        default_model: "qwen2.5:1.5b"
       vllm-3b-service:
         base_url: "http://vllm-3b-service.ai-platform.svc.cluster.local:8000"
         type: "vllm_openai"
+        default_model: "/models/qwen2.5-3b-awq"
