@@ -128,9 +128,11 @@ def _apply_dynamic_decision(snap: dict, action: dict, token_count: int, reasons:
             # 无动态状态 (未被 Operator 监控) → 视为可用 (乐观: 无证据不健康)
             reasons.append(f"  → 降级到 {fb} (无动态状态, 视为可用)")
             action["tier"] = fb
+            action["downgraded_from"] = tier  # 供 gateway 决策指标 (H6)
             return
         if fb_status.get("healthy", True) and fb_status.get("predictedP99Ms", 0) <= slo_ms:
             reasons.append(f"  → 降级到 {fb} (预判P99≈{fb_status.get('predictedP99Ms', 0):.0f}ms ≤ SLO)")
             action["tier"] = fb
+            action["downgraded_from"] = tier  # 供 gateway 决策指标 (H6)
             return
     reasons.append("  → fallback 均不可用, 保持原 tier")

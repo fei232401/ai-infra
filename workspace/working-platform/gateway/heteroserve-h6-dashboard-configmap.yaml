@@ -1,0 +1,142 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: heteroserve-h6-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: monitoring
+data:
+  heteroserve-h6.json: |
+    {
+      "annotations": {"list":[]},
+      "editable": true,
+      "graphTooltip": 1,
+      "panels": [
+        {
+          "title": "运行中请求 (vllm:num_requests_running)",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":8,"x":0,"y":0},
+          "targets": [{"expr":"vllm:num_requests_running","legendFormat":"running"}],
+          "fieldConfig": {"defaults":{"custom":{"lineWidth":2,"fillOpacity":10}}}
+        },
+        {
+          "title": "KV Cache 使用率",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":8,"x":8,"y":0},
+          "targets": [{"expr":"vllm:kv_cache_usage_perc * 100","legendFormat":"KV %"}],
+          "fieldConfig": {"defaults":{"unit":"percent","max":100,"custom":{"lineWidth":2,"fillOpacity":10}}}
+        },
+        {
+          "title": "请求 QPS (gateway)",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":8,"x":16,"y":0},
+          "targets": [{"expr":"sum(rate(gateway_requests_total[1m]))","legendFormat":"QPS"}],
+          "fieldConfig": {"defaults":{"unit":"reqps","custom":{"lineWidth":2,"fillOpacity":10}}}
+        },
+        {
+          "title": "TTFT P95 (首token延迟)",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":8,"x":0,"y":8},
+          "targets": [{"expr":"histogram_quantile(0.95, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket[1m])))","legendFormat":"TTFT P95"}],
+          "fieldConfig": {"defaults":{"unit":"s","custom":{"lineWidth":2,"fillOpacity":10}}}
+        },
+        {
+          "title": "TPOT P95 (每输出token延迟)",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":8,"x":8,"y":8},
+          "targets": [{"expr":"histogram_quantile(0.95, sum by (le) (rate(vllm:request_time_per_output_token_seconds_bucket[1m])))","legendFormat":"TPOT P95"}],
+          "fieldConfig": {"defaults":{"unit":"s","custom":{"lineWidth":2,"fillOpacity":10}}}
+        },
+        {
+          "title": "生成吞吐 (tokens/s)",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":8,"x":16,"y":8},
+          "targets": [{"expr":"rate(vllm:generation_tokens_total[1m])","legendFormat":"gen tok/s"}],
+          "fieldConfig": {"defaults":{"custom":{"lineWidth":2,"fillOpacity":10}}}
+        },
+        {
+          "title": "GPU 利用率",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":8,"x":0,"y":16},
+          "targets": [{"expr":"gpu_utilization_percent","legendFormat":"GPU {{gpu}}"}],
+          "fieldConfig": {"defaults":{"unit":"percent","max":100,"custom":{"lineWidth":2,"fillOpacity":10}}}
+        },
+        {
+          "title": "GPU 显存 (used/total MiB)",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":8,"x":8,"y":16},
+          "targets": [
+            {"expr":"gpu_memory_used_mib","legendFormat":"used {{gpu}}"},
+            {"expr":"gpu_memory_total_mib","legendFormat":"total {{gpu}}"}
+          ],
+          "fieldConfig": {"defaults":{"unit":"decbytes","custom":{"lineWidth":2,"fillOpacity":10}}}
+        },
+        {
+          "title": "GPU 温度 / 功耗",
+          "type": "stat",
+          "gridPos": {"h":8,"w":8,"x":16,"y":16},
+          "targets": [
+            {"expr":"gpu_temperature_celsius","legendFormat":"温度 {{gpu}}"},
+            {"expr":"gpu_power_watts","legendFormat":"功耗 {{gpu}}"}
+          ],
+          "fieldConfig": {"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":null},{"color":"yellow","value":70},{"color":"red","value":85}]}}}
+        },
+        {
+          "title": "LMCache 命中率 (external prefix cache)",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":8,"x":0,"y":24},
+          "targets": [{"expr":"sum(rate(vllm:external_prefix_cache_hits_total[1m])) / clamp_min(sum(rate(vllm:external_prefix_cache_queries_total[1m])), 1)","legendFormat":"LMCache hit ratio"}],
+          "fieldConfig": {"defaults":{"unit":"percentunit","max":1,"custom":{"lineWidth":2,"fillOpacity":10}}}
+        },
+        {
+          "title": "vLLM 前缀缓存命中率",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":8,"x":8,"y":24},
+          "targets": [{"expr":"sum(rate(vllm:prefix_cache_hits_total[1m])) / clamp_min(sum(rate(vllm:prefix_cache_queries_total[1m])), 1)","legendFormat":"vLLM hit ratio"}],
+          "fieldConfig": {"defaults":{"unit":"percentunit","max":1,"custom":{"lineWidth":2,"fillOpacity":10}}}
+        },
+        {
+          "title": "缓存 token 速率 (cached prompt tokens/s)",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":8,"x":16,"y":24},
+          "targets": [{"expr":"rate(vllm:prompt_tokens_cached_total[1m])","legendFormat":"cached tok/s"}],
+          "fieldConfig": {"defaults":{"custom":{"lineWidth":2,"fillOpacity":10}}}
+        },
+        {
+          "title": "路由决策分布 (by tier)",
+          "type": "bargauge",
+          "gridPos": {"h":8,"w":12,"x":0,"y":32},
+          "targets": [{"expr":"sum(increase(gateway_decisions_total[5m])) by (tier)","legendFormat":"{{tier}}"}],
+          "fieldConfig": {"defaults":{"color":{"mode":"palette-classic"},"unit":"short"}}
+        },
+        {
+          "title": "决策类型 (rule/fallback)",
+          "type": "bargauge",
+          "gridPos": {"h":8,"w":12,"x":12,"y":32},
+          "targets": [{"expr":"sum(increase(gateway_decisions_total[5m])) by (source)","legendFormat":"{{source}}"}],
+          "fieldConfig": {"defaults":{"color":{"mode":"palette-classic"},"unit":"short"}}
+        },
+        {
+          "title": "预判性降级次数",
+          "type": "stat",
+          "gridPos": {"h":8,"w":8,"x":0,"y":40},
+          "targets": [{"expr":"sum(gateway_downgrades_total)","legendFormat":"降级总数"}],
+          "fieldConfig": {"defaults":{"color":{"mode":"thresholds"},"thresholds":{"steps":[{"color":"green","value":null},{"color":"yellow","value":1},{"color":"red","value":5}]}}}
+        },
+        {
+          "title": "路由决策趋势",
+          "type": "timeseries",
+          "gridPos": {"h":8,"w":16,"x":8,"y":40},
+          "targets": [{"expr":"sum(rate(gateway_decisions_total[1m])) by (tier, source)","legendFormat":"{{tier}} / {{source}}"}],
+          "fieldConfig": {"defaults":{"custom":{"lineWidth":2,"fillOpacity":10}}}
+        }
+      ],
+      "refresh": "15s",
+      "schemaVersion": 39,
+      "tags": ["heteroserve","h6","llm","gpu","sre-lab"],
+      "time": {"from":"now-15m","to":"now"},
+      "title": "HeteroServe H6 — 推理观测",
+      "uid": "heteroserve-h6",
+      "version": 1
+    }

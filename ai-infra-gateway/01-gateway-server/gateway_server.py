@@ -48,9 +48,15 @@ def route_request(body: dict, model: str) -> tuple:
             mapped = tconf.get("default_model")
             if mapped:
                 body["model"] = mapped
+            source = "rule" if rule_id else "default"
+            DECISION_COUNT.labels(tier=tier, source=source).inc()
+            downgraded_from = action.get("downgraded_from")
+            if downgraded_from:
+                DOWNGRADE_COUNT.labels(from_tier=downgraded_from, to_tier=tier).inc()
             logger.info(f"路由决策 → {tier} (rule={rule_id}, model→{body['model']}) | 推理: {'; '.join(reasons)}")
             return tconf["base_url"], tconf["type"], {"tier": tier, "rule_id": rule_id, "reasons": reasons}
     base_url, backend_type = get_backend(model)
+    DECISION_COUNT.labels(tier=model, source="fallback").inc()  # H6: 默认路由也计入决策分布
     logger.info(f"路由 fallback → model={model} | 推理: {'; '.join(reasons)}")
     return base_url, backend_type, {"tier": model, "reasons": reasons}
 
@@ -70,6 +76,9 @@ IN_PROGRESS = Gauge('gateway_requests_in_progress', 'In-progress', ['method', 'p
 CIRCUIT_STATE = Gauge('gateway_circuit_breaker_state', 'Circuit breaker state')
 OLLAMA_REQUESTS = Counter('gateway_ollama_requests_total', 'Ollama backend', ['endpoint', 'status_code'])
 VLLM_REQUESTS = Counter('gateway_vllm_requests_total', 'vLLM backend', ['endpoint', 'status_code'])
+# H6 调度面板数据源: 路由决策分布 + 预判性降级
+DECISION_COUNT = Counter('gateway_decisions_total', '路由决策分布', ['tier', 'source'])
+DOWNGRADE_COUNT = Counter('gateway_downgrades_total', '预判性降级', ['from_tier', 'to_tier'])
 
 # ---------- Rate Limiting ----------
 class TokenBucket:

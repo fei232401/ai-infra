@@ -15,7 +15,7 @@ spec:
         app: gpu-exporter
     spec:
       nodeSelector:
-        node-role: gpu
+        nvidia.com/gpu: "true"
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
@@ -33,10 +33,12 @@ spec:
             - name: NVIDIA_DRIVER_CAPABILITIES
               value: "compute,utility"
             - name: LD_LIBRARY_PATH
-              value: "/usr/lib/wsl/lib:/usr/lib/x86_64-linux-gnu"
+              value: "/usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127:/usr/lib/wsl/lib:/usr/local/nvidia/lib64"
           securityContext:
             privileged: true
           volumeMounts:
+            - name: dxg-device
+              mountPath: /dev/dxg
             - name: wsl-lib
               mountPath: /usr/lib/wsl/lib
               readOnly: true
@@ -55,6 +57,8 @@ spec:
             requests: { cpu: 50m, memory: 64Mi }
             limits: { cpu: 300m, memory: 128Mi }
       volumes:
+        - name: dxg-device
+          hostPath: { path: /dev/dxg }
         - name: wsl-lib
           hostPath: { path: /usr/lib/wsl/lib, type: DirectoryOrCreate }
         - name: wsl-drivers
@@ -82,7 +86,7 @@ metadata:
   namespace: monitoring
   labels:
     app: gpu-exporter
-    release: monitoring-stack
+    release: monitoring
 spec:
   endpoints:
     - port: metrics

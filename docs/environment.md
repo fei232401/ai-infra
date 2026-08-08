@@ -283,6 +283,29 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
 
 ---
 
+## 九、H6 观测面板 — ✅ 2026-08-08 完成（Phase 0 遗留补齐）
+
+4 类 16 面板 `HeteroServe H6 — 推理观测`（ConfigMap: `heteroserve-h6-dashboard`，namespace monitoring）：
+- **推理**：num_requests_running / KV cache 使用率 / gateway QPS / TTFT P95 / TPOT P95 / 生成吞吐
+- **GPU**：利用率 / 显存 used-total / 温度 / 功耗（数据源 gpu-exporter）
+- **缓存**：LMCache 命中率（`vllm:external_prefix_cache_*`）/ vLLM 前缀命中率 / 缓存 token 速率
+- **调度**：决策分布 by tier / by source / 降级次数 / 决策趋势（`gateway_decisions_total` / `gateway_downgrades_total`）
+
+### H6 前置修复的 4 个坑（全是 GitOps/标签坑，面试可讲）
+
+1. **gpu-exporter WSL 配方**：NVML 需要版本驱动目录 + `/dev/dxg`。正确配方 = 挂 `/usr/lib/wsl/drivers/nvtfi.inf_amd64_b747199a5b009127`（保持版本子目录）+ `/dev/dxg` + `LD_LIBRARY_PATH` 指向版本目录（照抄 vLLM §3.1）。原来只挂 `/usr/lib/wsl/lib` → **NVML Shared Library Not Found**（`/usr/lib/wsl/lib` 只有 libdxcore，libnvidia-ml 在版本驱动目录里）
+2. **ServiceMonitor label 必须 `release: monitoring`**：gpu-exporter 原来写 `monitoring-stack` → 被 Prometheus CR selector（`serviceMonitorSelector: {release: monitoring}`）忽略，**GPU 指标从未被采集过**（这是 gpu-exporter 一直"没数据"的真正原因）
+3. **gateway ServiceMonitor 从未 apply**（P2 遗留）：文件在仓库但集群里没有 → gateway 指标从未进 Prometheus。`kubectl get servicemonitor -A` 核对，不在就 apply
+4. **gateway 决策指标缺失**：原来只有请求计数，无调度决策/降级指标 → 新增 `gateway_decisions_total{tier,source}`（rule/fallback 都计）+ `gateway_downgrades_total{from_tier,to_tier}`（gateway v18，router.py 打 `downgraded_from` 标记）
+
+### 其他 H6 相关要点
+
+- **vLLM 指标名是 `vllm:`（冒号）不是 `vllm_`（下划线）**——PromQL 直接写 `vllm:num_requests_running` / `vllm:external_prefix_cache_hits_total` 等
+- **决策指标触发**：请求带 `cache_hit_probability` 字段（>0.5 命中 rule-001 走 CPU）；不带则 cache_hit_prob=0.0 常走 fallback（设计如此，cache-aware 加权是演进项）
+- **k3d 集群重启后**：`k3d cluster start ai-cluster`；vLLM 自动重建（新 pod 加载 ~2min）；删旧 Error pod（占 GPU 资源坑 §4.5）
+
+---
+
 ## 修订记录
 
 | 版本 | 日期 | 内容 |
@@ -295,3 +318,4 @@ vLLM KV 机制 → LMCache 集成点 → 排队模型 → Operator。
 | v1.5 | 2026-08-06 | **Phase 2 完整收尾**：CRD 热更新实测 + model 映射修复（v14，vllm 真实回答）+ snapshot 刷新 hash 修复 + ollama chat/stream 端到端。遗留：ollama generate messages 兼容、预判降级（Phase 3） |
 | v1.6 | 2026-08-06 | **Phase 3 完成**：联动闭环。Operator 指标采集→快照动态状态→预判性降级 Demo（GPU 忙 P99≈1100>800 → 主动降级 ollama，证据链完整）。踩坑：waiting 恒 0 用 running、kubelet 挂载延迟 |
 | v1.7 | 2026-08-06 | **Phase 4 包装完成**：两个 README（cyberrouter/heteroserve）+ BLUEPRINT DoD/量化目标回填。全部 Phase 完成，进入深度解构+面试深挖阶段 |
+| v1.8 | 2026-08-08 | **H6 观测面板完成**（Phase 0 遗留补齐）：GPU/推理/缓存/调度 4 类 16 面板。前置修复：gpu-exporter WSL 配方（NVML 版本目录+/dev/dxg）+ SM label 改 monitoring + gateway SM 补部署 + gateway 决策指标（v18，含 fallback）。集群已重启（08-08） |
