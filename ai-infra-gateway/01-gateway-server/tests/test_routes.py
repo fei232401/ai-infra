@@ -92,17 +92,16 @@ class TestRateLimit:
 class TestCircuitBreakerIntegration:
 
     def test_circuit_breaker_state_opens_on_generate_failures(self, client, auth_headers, mock_ollama, no_retry):
-        """连续 /api/generate 后端失败达到阈值 → 熔断器状态置 OPEN (record_failure 接线验证)
+        """连续 /api/generate 后端失败达到阈值 → 熔断打开 → 后续 ollama 请求被 503 拦截
 
-        注意: 熔断器当前只记录状态, 未接入请求拦截 — allow_request() 从未被任何路由调用,
-        请求不会被 503 拒绝。这是 P1 验证发现的真实缺口, 见 P1 验证文档。
+        gate 只拦 ollama 分支 (熔断器跟踪 ollama 健康, 不把故障扩散到 vllm 请求)。
         """
         # 让 Ollama 模拟不可达 (generate 走 ollama 分支才会 record_failure)
         mock_ollama.post.side_effect = aiohttp.ClientError("Connection refused")
 
         threshold = gateway_server.config["circuit_breaker"]["failure_threshold"]
 
-        # 连续失败达到阈值: 每次记录失败并返回 502
+        # 前 N 次: 失败发生前请求已被放行 (CLOSED), 各返回 502 并记录失败
         for _ in range(threshold):
             resp = client.post("/api/generate", json={"prompt": "Hello"}, headers=auth_headers)
             assert resp.status_code == 502
@@ -110,3 +109,8 @@ class TestCircuitBreakerIntegration:
         cb = gateway_server.circuit_breaker
         assert cb.state == cb.OPEN            # 阈值触发后状态置 OPEN
         assert cb.failure_count >= threshold  # 失败计数已记录
+
+        # 熔断打开后: 下一次 ollama 请求被 503 拦截 (熔断器接线验证)
+        resp = client.post("/api/generate", json={"prompt": "Hello"}, headers=auth_headers)
+        assert resp.status_code == 503
+        assert "熔断" in resp.json()["detail"]

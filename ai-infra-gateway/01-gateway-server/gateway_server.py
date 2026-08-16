@@ -128,6 +128,9 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     token = request.headers.get("Authorization", "").replace("Bearer ", "") or request.headers.get("X-API-Key", "")
     if not token:
+        # 401 在 metrics_middleware 之前直接返回, 它不会计数 → 这里自行 inc,
+        # 否则拒绝流量对 Prometheus 不可见 (P1 验证发现 §3)
+        REQUEST_COUNT.labels(method=request.method, path=request.url.path, status_code="401").inc()
         return JSONResponse(status_code=401, content={"error": "Unauthorized"})
     try:
         pyjwt.decode(token, config["auth"]["jwt_secret"], algorithms=[config["auth"]["jwt_algorithm"]])
@@ -136,6 +139,7 @@ async def auth_middleware(request: Request, call_next):
         pass
     if token in config["auth"]["api_keys"]:
         return await call_next(request)
+    REQUEST_COUNT.labels(method=request.method, path=request.url.path, status_code="401").inc()
     return JSONResponse(status_code=401, content={"error": "Unauthorized"})
 
 # ---------- Session ----------
@@ -263,6 +267,9 @@ async def generate(request: Request):
         except aiohttp.ClientError as e:
             raise HTTPException(status_code=502, detail=f"vLLM error: {e}")
     else:
+        # 熔断 gate 只拦 ollama 分支: 熔断器跟踪的是 ollama 健康, 不把故障扩散到 vllm 请求
+        if not circuit_breaker.allow_request():
+            raise HTTPException(status_code=503, detail="熔断: ollama 持续不可达, 拒绝请求")
         try:
             async with sess.post(f"{base_url}/api/generate", json=body) as resp:
                 OLLAMA_REQUESTS.labels(endpoint="/api/generate", status_code=str(resp.status)).inc()
@@ -328,6 +335,9 @@ async def chat_stream(request: Request):
         return StreamingResponse(gen(), media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
     else:
+        # 熔断 gate 只拦 ollama 分支 (与 generate 一致, 不扩散到 vllm)
+        if not circuit_breaker.allow_request():
+            raise HTTPException(status_code=503, detail="熔断: ollama 持续不可达, 拒绝请求")
         ollama_ep = "/api/chat" if is_chat else "/api/generate"
         sess = await get_session()
         async def gen():
@@ -337,6 +347,7 @@ async def chat_stream(request: Request):
                     if resp.status != 200:
                         yield f"data: {json.dumps({'error': await resp.text()})}\n\n"
                         return
+                    circuit_breaker.record_success()  # 拿到 200 视为一次成功探活 (重置熔断器)
                     async for raw in resp.content:
                         line = raw.decode("utf-8").strip()
                         if not line: continue
@@ -347,6 +358,7 @@ async def chat_stream(request: Request):
                         chunk["backend"] = "ollama"
                         yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             except aiohttp.ClientError as e:
+                circuit_breaker.record_failure()
                 OLLAMA_REQUESTS.labels(endpoint=ollama_ep, status_code="error").inc()
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
         return StreamingResponse(gen(), media_type="text/event-stream",
