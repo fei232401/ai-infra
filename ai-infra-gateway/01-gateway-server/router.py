@@ -8,9 +8,13 @@ from typing import List, Optional, Tuple
 
 
 def estimate_tokens(body: dict) -> int:
-    """从 messages 估算 token 数 (Qwen2.5 中文 ~0.489 token/字符, 用 0.5 近似)"""
+    """从 messages 或 prompt 估算 token 数 (Qwen2.5 中文 ~0.489 token/字符, 用 0.5 近似)
+    两种请求格式都统计: /v1/chat/completions 用 messages, /api/generate (Ollama 式) 用 prompt。
+    只统计 messages 会导致 generate 请求复杂度恒为 low, rule-002(长请求→GPU) 永不命中。"""
+    chars = 0
     msgs = body.get("messages", [])
-    chars = sum(len(m.get("content", "")) for m in msgs if isinstance(m, dict))
+    chars += sum(len(m.get("content", "")) for m in msgs if isinstance(m, dict))
+    chars += len(body.get("prompt", ""))
     return int(chars * 0.5)
 
 
