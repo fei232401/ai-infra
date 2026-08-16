@@ -31,6 +31,12 @@ retry:
   max_attempts: 2
   backoff_seconds: 1
 
+# cache-aware 动态加权 (CyberRouter §5.1 联动): 判定 tier 过载时, 用实测命中率打折预判 P99
+#   命中率高 → 缓存请求廉价 (免 prefill) → 有效 P99 低 → tier 更不易被降级走 (等价"权重上调")
+# boost: 折扣系数, 0=关闭, 0.5=满命中时有效 P99 减半 (启发式初值, 需真实负载标定)
+cache_aware:
+  boost: 0.5
+
 backends:
   cpu_ollama:
     base_url: "http://ollama-service:11434"

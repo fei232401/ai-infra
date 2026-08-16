@@ -52,8 +52,11 @@ def _compare(v, expr: str) -> bool:
     return False
 
 
-def decide(snap: Optional[dict], token_count: int, cache_hit_prob: float) -> Tuple[Optional[dict], Optional[str], List[str]]:
+def decide(snap: Optional[dict], token_count: int, cache_hit_prob: float, cache_boost: float = 0.5) -> Tuple[Optional[dict], Optional[str], List[str]]:
     """决策: 规则匹配 (静态) → 动态状态检查 + 预判性降级 (Phase 3)
+
+    cache_boost: cache-aware 动态加权系数 (0=关闭, 0.5=满命中时有效 P99 减半),
+                 由 gateway_config.yaml cache_aware.boost 传入 (启发式初值, 需真实负载标定)
 
     返回 (action, rule_id, reasons)
     action: {"tier": "...", "fallbackChain": [...]} 或 None (走默认路由)
@@ -84,7 +87,7 @@ def decide(snap: Optional[dict], token_count: int, cache_hit_prob: float) -> Tup
             reasons.append(f"命中规则 {rule.get('id')} (priority {rule.get('priority')}): {' AND '.join(why)}")
             action = rule.get("action")
             # Phase 3: 动态状态检查 + 预判性降级 (GPU 忙/不健康 → 沿 fallback 降级)
-            _apply_dynamic_decision(snap, action, token_count, reasons)
+            _apply_dynamic_decision(snap, action, token_count, reasons, cache_boost)
             return action, rule.get("id"), reasons
         reasons.append(f"规则 {rule.get('id')} 未命中")
     reasons.append("无规则命中 → 走默认路由")
@@ -99,9 +102,13 @@ def _tier_status(snap: dict, tier_name: str) -> Optional[dict]:
     return None
 
 
-def _apply_dynamic_decision(snap: dict, action: dict, token_count: int, reasons: List[str]) -> None:
-    """预判性降级: 选中 tier 不健康 或 预判P99超SLO → 沿 fallbackChain 降级
+def _apply_dynamic_decision(snap: dict, action: dict, token_count: int, reasons: List[str], cache_boost: float = 0.5) -> None:
+    """预判性降级: 选中 tier 不健康 或 有效P99超SLO → 沿 fallbackChain 降级
     无动态状态 (旧快照/未采集) 时维持静态决策 (向后兼容)
+
+    cache-aware 动态加权: 判定过载时用 tier 实测命中率打折预判 P99 —
+    命中率高 → 缓存请求廉价 (免 prefill, 延迟低) → 有效 P99 低 → tier 更不易被降级走,
+    等价于"高命中 tier 权重上调" (BLUEPRINT §5.1)。命中率 0 / 无该字段 → 不变化。
     """
     tier = action.get("tier")
     status = _tier_status(snap, tier)
@@ -111,14 +118,21 @@ def _apply_dynamic_decision(snap: dict, action: dict, token_count: int, reasons:
     slo_entry = snap.get("slo", {}).get(complexity(token_count), 5000)
     slo_ms = slo_entry if isinstance(slo_entry, (int, float)) else (slo_entry or {}).get("maxP99Ms", 5000)
     predicted = status.get("predictedP99Ms", 0)
-    overloaded = (not status.get("healthy", True)) or (predicted > slo_ms)
+    hit = status.get("cacheHitRatio", 0.0)
+    effective_p99 = predicted * (1 - hit * cache_boost)
+    if hit > 0:
+        reasons.append(
+            f"cache-aware: {tier} 命中率 {hit:.0%} → 有效P99 {predicted:.0f}×{1 - hit * cache_boost:.2f}≈{effective_p99:.0f}ms"
+        )
+    overloaded = (not status.get("healthy", True)) or (effective_p99 > slo_ms)
 
     if not overloaded:
-        reasons.append(f"tier 状态 OK: {tier} P99≈{predicted:.0f}ms ≤ SLO {slo_ms}ms")
+        reasons.append(f"tier 状态 OK: {tier} 有效P99≈{effective_p99:.0f}ms ≤ SLO {slo_ms}ms")
         return
 
     reasons.append(
-        f"⚠️ 预判降级: {tier} (healthy={status.get('healthy')}, 预判P99≈{predicted:.0f}ms > SLO {slo_ms}ms)"
+        f"⚠️ 预判降级: {tier} (healthy={status.get('healthy')}, 有效P99≈{effective_p99:.0f}ms > SLO {slo_ms}ms"
+        + (f", 打折前 {predicted:.0f}ms)" if hit > 0 else ")")
     )
     for fb in action.get("fallbackChain", []):
         if fb == tier:
@@ -130,8 +144,13 @@ def _apply_dynamic_decision(snap: dict, action: dict, token_count: int, reasons:
             action["tier"] = fb
             action["downgraded_from"] = tier  # 供 gateway 决策指标 (H6)
             return
-        if fb_status.get("healthy", True) and fb_status.get("predictedP99Ms", 0) <= slo_ms:
-            reasons.append(f"  → 降级到 {fb} (预判P99≈{fb_status.get('predictedP99Ms', 0):.0f}ms ≤ SLO)")
+        fb_hit = fb_status.get("cacheHitRatio", 0.0)
+        fb_effective = fb_status.get("predictedP99Ms", 0) * (1 - fb_hit * cache_boost)
+        if fb_status.get("healthy", True) and fb_effective <= slo_ms:
+            reasons.append(
+                f"  → 降级到 {fb} (预判P99≈{fb_status.get('predictedP99Ms', 0):.0f}ms"
+                + (f", 命中率 {fb_hit:.0%} 打折后 {fb_effective:.0f}ms ≤ SLO)" if fb_hit > 0 else " ≤ SLO)")
+            )
             action["tier"] = fb
             action["downgraded_from"] = tier  # 供 gateway 决策指标 (H6)
             return

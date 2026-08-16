@@ -127,10 +127,10 @@ func TestPredictP99_QueueModel(t *testing.T) {
 
 func TestFilterCandidates_RejectsUnhealthyAndSLO(t *testing.T) {
 	tiers := []TierHealth{
-		{Name: "gpu", Healthy: true, CurrentP99Ms: 300, QueueDepth: 2, MarginalMs: 80},  // 300+160=460
-		{Name: "cpu", Healthy: true, CurrentP99Ms: 150, QueueDepth: 1, MarginalMs: 40},   // 150+40=190
+		{Name: "gpu", Healthy: true, CurrentP99Ms: 300, QueueDepth: 2, MarginalMs: 80},       // 300+160=460
+		{Name: "cpu", Healthy: true, CurrentP99Ms: 150, QueueDepth: 1, MarginalMs: 40},       // 150+40=190
 		{Name: "gpu-busy", Healthy: true, CurrentP99Ms: 900, QueueDepth: 10, MarginalMs: 80}, // 900+800=1700
-		{Name: "dead", Healthy: false, CurrentP99Ms: 0, QueueDepth: 0, MarginalMs: 0},   // 不健康
+		{Name: "dead", Healthy: false, CurrentP99Ms: 0, QueueDepth: 0, MarginalMs: 0},        // 不健康
 	}
 	// SLO 500ms: 只剩 gpu(460) 和 cpu(190)
 	ok, rejected := FilterCandidates(tiers, 500)
@@ -142,5 +142,45 @@ func TestFilterCandidates_RejectsUnhealthyAndSLO(t *testing.T) {
 	}
 	for _, r := range rejected {
 		t.Logf("  拒绝理由: %s", r) // 决策日志可读性
+	}
+}
+
+func TestCacheAwareP99_DiscountByHitRatio(t *testing.T) {
+	h := TierHealth{Name: "vllm", Healthy: true, CurrentP99Ms: 100, QueueDepth: 2, MarginalMs: 50} // 原始 200
+	raw := PredictP99(h)
+	if raw != 200 {
+		t.Fatalf("PredictP99 = %.0f, want 200", raw)
+	}
+	// 满命中 + boost 0.5 → 200×0.5 = 100
+	h.CacheHitRatio = 1.0
+	if got := CacheAwareP99(h, 0.5); got != 100 {
+		t.Errorf("满命中 CacheAwareP99 = %.1f, want 100", got)
+	}
+	// 无命中 → 不变化
+	h.CacheHitRatio = 0.0
+	if got := CacheAwareP99(h, 0.5); got != 200 {
+		t.Errorf("零命中 CacheAwareP99 = %.1f, want 200", got)
+	}
+	// boost=0 → 关闭打折
+	h.CacheHitRatio = 1.0
+	if got := CacheAwareP99(h, 0.0); got != 200 {
+		t.Errorf("boost=0 CacheAwareP99 = %.1f, want 200", got)
+	}
+}
+
+func TestCacheAwareCandidates_HighHitKeepsTier(t *testing.T) {
+	tiers := []TierHealth{
+		{Name: "vllm", Healthy: true, CurrentP99Ms: 300, QueueDepth: 2, MarginalMs: 50, CacheHitRatio: 0.95}, // 原始400, 打折400×0.525=210
+		{Name: "ollama", Healthy: true, CurrentP99Ms: 100, QueueDepth: 1, MarginalMs: 20},                    // 120
+	}
+	// SLO 300: 原始版会拒 vllm (400>300), cache-aware 后 210 ≤ 300 → 保留
+	ok, _ := CacheAwareCandidates(tiers, 300, 0.5)
+	if len(ok) != 2 {
+		t.Errorf("cache-aware 合格候选 = %d, want 2 (vllm 因高命中率被保留)", len(ok))
+	}
+	// boost=0 → 行为与 FilterCandidates 一致: 只留 ollama
+	ok2, _ := CacheAwareCandidates(tiers, 300, 0.0)
+	if len(ok2) != 1 {
+		t.Errorf("boost=0 合格候选 = %d, want 1 (只留 ollama)", len(ok2))
 	}
 }

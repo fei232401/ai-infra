@@ -84,10 +84,10 @@ func SelectTier(snap *snapshot.Snapshot, req Request) Decision {
 		return Decision{Reasons: reasons} // gateway 侧走默认路由
 	}
 	return Decision{
-		Tier:         rule.Action.Tier,
+		Tier:          rule.Action.Tier,
 		FallbackChain: rule.Action.FallbackChain,
-		RuleID:       rule.ID,
-		Reasons:      reasons,
+		RuleID:        rule.ID,
+		Reasons:       reasons,
 	}
 }
 
@@ -206,6 +206,41 @@ type TierHealth struct {
 	QueueDepth int
 	// MarginalMs 每请求边际延迟 (毫秒, 简化排队模型)
 	MarginalMs float64
+	// CacheHitRatio 该 tier 实测缓存命中率 (0-1, Operator 从 vLLM prefix_cache 指标采集)
+	CacheHitRatio float64
+}
+
+// CacheAwareP99 命中率感知的有效 P99: 命中率高 → 缓存请求廉价 (免 prefill, 延迟低) → 有效 P99 打折
+// cacheBoost: 折扣系数 (0=关闭, 0.5=满命中时有效 P99 减半), 启发式初值需真实负载标定
+func CacheAwareP99(h TierHealth, cacheBoost float64) float64 {
+	return PredictP99(h) * (1 - h.CacheHitRatio*cacheBoost)
+}
+
+// CacheAwareCandidates 候选过滤 (cache-aware 变体): 剔除不健康 / 有效P99 超 SLO 的 tier
+// 与 FilterCandidates 唯一区别: 用 CacheAwareP99 打折判定过载 —
+// 高命中 tier 更不易被拒, 等价"高命中 tier 权重上调" (BLUEPRINT §5.1)
+// 运行时对应逻辑见 ai-infra-gateway/router.py _apply_dynamic_decision
+func CacheAwareCandidates(tiers []TierHealth, sloMs int, cacheBoost float64) ([]TierHealth, []string) {
+	var ok []TierHealth
+	var rejected []string
+	for _, t := range tiers {
+		if !t.Healthy {
+			rejected = append(rejected, fmt.Sprintf("%s: 不健康", t.Name))
+			continue
+		}
+		raw := PredictP99(t)
+		predicted := CacheAwareP99(t, cacheBoost)
+		if predicted > float64(sloMs) {
+			if t.CacheHitRatio > 0 {
+				rejected = append(rejected, fmt.Sprintf("%s: 有效P99 %.0fms > SLO %dms (命中率 %.0f%% 打折, 原始 %.0fms)", t.Name, predicted, sloMs, t.CacheHitRatio*100, raw))
+			} else {
+				rejected = append(rejected, fmt.Sprintf("%s: 预判P99 %.0fms > SLO %dms", t.Name, predicted, sloMs))
+			}
+			continue
+		}
+		ok = append(ok, t)
+	}
+	return ok, rejected
 }
 
 // PredictP99 简化排队模型预测: 当前P99 + 队列深度 × 每请求边际延迟

@@ -39,7 +39,10 @@ def route_request(body: dict, model: str) -> tuple:
     """快照优先路由决策; 无快照/无 tier 映射时 fallback 到按 model 的静态映射"""
     cache_hit_prob = float(body.get("cache_hit_probability", 0.0))
     token_count = estimate_tokens(body)
-    action, rule_id, reasons = decide(snapshot_loader.get(), token_count, cache_hit_prob)
+    action, rule_id, reasons = decide(
+        snapshot_loader.get(), token_count, cache_hit_prob,
+        config["cache_aware"]["boost"],
+    )
     if action:
         tier = action.get("tier")
         tconf = tiers.get(tier)

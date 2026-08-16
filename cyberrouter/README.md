@@ -101,7 +101,7 @@ cyberrouter/
 ## 诚实边界（面试防雷）
 
 - **预判 P99 是简化排队模型**（300ms + running×边际），非完整 M/G/1——主动说这是"第一版简化，深度后补"
-- **cache-aware 动态加权是演进项**：命中率已采集进快照、CR 已支持命中率条件，但"命中率自动调 tier 权重"未实现
+- **cache-aware 动态加权已实现（2026-08-16）**：判定 tier 过载时用实测命中率打折预判 P99（`router.py` + Go `CacheAwareP99`），高命中 tier 更不易被降级。折扣系数 `cache_aware.boost`（默认 0.5）是**启发式初值，未经真实负载标定**——面试要主动说明这一点
 - **灰度 (rollout.percentage)**：字段已定义，未做多版本流量拆分实测
 - 单 GPU 环境：调度决策在"tier 间"，不做副本级弹性（单卡扩容=OOM，见 BLUEPRINT D3）
 
