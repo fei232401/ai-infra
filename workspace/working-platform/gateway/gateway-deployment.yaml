@@ -20,8 +20,8 @@ spec:
         node-role: cpu
       containers:
         - name: gateway
-          image: ai-infra-gateway:v18
-          imagePullPolicy: Never
+          image: ai-infra-gateway:v20
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
               name: http
