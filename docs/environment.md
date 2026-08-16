@@ -205,7 +205,7 @@ project/ (git 仓库 ai-infra)
    - **LMCache 版**：= **0.11-0.19s**（CPU/SSD 恢复）→ **3-5× 提速**
    - 未逐出前缀两者均 0.04s（vLLM GPU 缓存）
    - **诚实口径**：LMCache 增量价值在"GPU KV 超容量"场景，非替代 vLLM 缓存
-5. **缓存指标入 Prometheus**（H4）：vllm-servicemonitor（`release: monitoring`），命中率 = `prefix_cache_hits/queries_total`（实测 27.6%），Phase 2 调度器数据源。
+5. **缓存指标入 Prometheus**（H4）：vllm-servicemonitor（`release: monitoring`），命中率 = `prefix_cache_hits/queries_total`，Phase 2 调度器数据源。（旧记录"实测 27.6%"已撤：无复现来源、与共享前缀负载实测的 95.1% 口径不一致，见 `P1_验证发现.md` §命中率口径）
 6. **H2 vLLM 调参矩阵**（2026-08-06 完成）：`heteroserve/benchmark/tuning_matrix.py` + `load_test.py`，全自动扫 `gpu_memory_utilization × max_num_seqs × max_local_cpu_size`。结果存 `heteroserve/benchmark/results/matrix_results.json`。
    - **A 系列（gpu_util, seqs=8, cpu=1GB）**：0.7→QPS 9.78；**0.8→QPS 9.87, TTFT P95 0.59s（最优）**；**0.9→OOM**（LMCache 连接器被 vLLM 预分配挤爆）
    - **B 系列（max_num_seqs, gpu=0.8, cpu=1GB）**：4→QPS 5.57, P95 1.27s（**旧 BASE，最大瓶颈**）；8→9.87；**16→10.23（峰值）**；32→9.26（饱和回落）
