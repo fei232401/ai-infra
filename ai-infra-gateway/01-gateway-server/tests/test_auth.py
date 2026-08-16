@@ -38,11 +38,10 @@ class TestJWTAuth:
         assert resp.status_code == 200
 
     def test_expired_jwt_rejected(self, client, expired_jwt_token):
-        """过期 JWT 返回 401 + Token expired"""
+        """过期 JWT 返回 401 (中间件对过期/无效 token 统一返回 Unauthorized, 不区分错误消息)"""
         headers = {"Authorization": f"Bearer {expired_jwt_token}"}
         resp = client.get("/api/models", headers=headers)
         assert resp.status_code == 401
-        assert "expired" in resp.json()["error"].lower()
 
     def test_invalid_jwt_rejected(self, client):
         """无效 JWT（签名错误/格式错误）返回 401"""

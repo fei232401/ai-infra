@@ -34,16 +34,24 @@ def _make_async_cm(response_obj):
 # ============================================================
 @pytest.fixture(autouse=True)
 def _reset_global_state():
-    """重置模块级全局变量，确保测试之间互相隔离"""
+    """重置模块级全局变量，确保测试之间互相隔离
+
+    同时强制 auth.enabled=True: 测试套件假设鉴权开启 (auth_headers/401 断言),
+    但 shipped 配置 gateway_config.yaml 里 auth.enabled=false (集群内直连免鉴权)。
+    测试必须与配置状态解耦, 否则依赖配置文件的测试在两种状态间漂移。
+    """
     gateway_server.buckets.clear()
     cb = gateway_server.circuit_breaker
     cb.state = cb.CLOSED
     cb.failure_count = 0
     cb.last_failure_time = 0
     gateway_server.session = None
+    auth_enabled = gateway_server.config["auth"]["enabled"]
+    gateway_server.config["auth"]["enabled"] = True
     yield
     gateway_server.buckets.clear()
     gateway_server.session = None
+    gateway_server.config["auth"]["enabled"] = auth_enabled
 
 
 # ============================================================

@@ -99,8 +99,8 @@ buckets = defaultdict(lambda: TokenBucket(config["rate_limit"]["capacity"], conf
 # ---------- Circuit Breaker ----------
 class CircuitBreaker:
     CLOSED, OPEN, HALF_OPEN = "closed", "open", "half_open"
-    def __init__(self, ft, ts):
-        self.failure_threshold, self.timeout_seconds = ft, ts
+    def __init__(self, failure_threshold, timeout_seconds):
+        self.failure_threshold, self.timeout_seconds = failure_threshold, timeout_seconds
         self.state, self.failure_count, self.last_failure_time = self.CLOSED, 0, 0
     def record_failure(self):
         self.failure_count += 1
